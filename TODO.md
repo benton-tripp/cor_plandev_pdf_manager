@@ -1,0 +1,1 @@
+- Progress bar for splitting PDFs is mest up (messages in UI are not synced or don't update)

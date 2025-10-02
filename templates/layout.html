@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+  <!-- Title -->
+  <title>PlanDev PDF Manager</title>
+
+  <!-- Canonical Link -->
+  <link rel="canonical" href="{{ canonical_url | default(request.url) }}">
+
+  <!-- Favicon -->
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='images/apple-touch-icon.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='images/favicon-32x32.png') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='images/favicon-16x16.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='images/site.webmanifest') }}">
+  <style>
+    body {
+      visibility: hidden;
+    }
+
+    body.css-loaded {
+      visibility: visible;
+    }
+  </style>
+
+  <!-- Styles and Scripts -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+
+  <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.1/css/all.min.css" as="style"
+    onload="this.onload=null;this.rel='stylesheet'">
+  <noscript>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.1/css/all.min.css">
+  </noscript>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+
+
+</head>
+
+<body>
+  <!-- Navbar / Menu -->
+  <nav class="navbar box-shadow-bottom">
+    <div class="navbar-inner">
+      <div class="navbar-brand">
+        <a id="navbar-title" href="{{ url_for('index') }}">
+          <img src="{{ url_for('static', filename='images/raleigh_square_2.png')}}" width="65" heigh="65">
+          <span>PlanDev PDF Manager</span>
+        </a>
+      </div>
+      <button class="navbar-toggle" id="navbar-toggle">
+        <i class="fas fa-bars"></i> <!-- Font Awesome hamburger icon -->
+      </button>
+      <div class="navbar-menu" id="navbar-menu">
+        {% if request.endpoint != 'index' %}
+        <a href="{{ url_for('index') }}" class="navbar-item" id="nav-home">
+          Home&nbsp;<i class="fas fa-home"></i>&nbsp;
+        </a>
+        {% endif %}
+        {% if request.endpoint != 'help' %}
+        <a href="{{ url_for('help') }}" class="navbar-item" id="nav-help">
+          Help&nbsp;<i class="fas fa-question-circle"></i>&nbsp;
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    {% block content %}
+
+    {% endblock %}
+
+  </div>
+
+  <!-- PDF Tool Modals -->
+  <div id="compress-modal" class="tool-modal" style="display:none;">
+    <div class="tool-modal-content tool-modal-flexcol">
+      <h2>Compress PDF</h2>
+      <div class="tool-modal-row">
+        <label for="compress-input" class="tool-modal-label">Select PDF:</label>
+        <input type="file" id="compress-input" accept=".pdf" style="width: 220px;">
+      </div>
+      <div class="tool-modal-row">
+        <label for="compress-filename" class="tool-modal-label">Output Filename:</label>
+        <input type="text" id="compress-filename" disabled style="width: 220px; display:inline-block;"> <span
+          style="margin-left:2px;">.pdf</span>
+      </div>
+      <div class="tool-modal-row tool-modal-btn-row">
+        <button id="compress-run" class="tool-modal-run" disabled>Run</button>
+        <button class="tool-modal-cancel" data-modal="compress-modal">Cancel</button>
+      </div>
+      <div id="compress-message" class="tool-modal-message"></div>
+    </div>
+  </div>
+  <div id="split-modal" class="tool-modal" style="display:none;">
+    <div class="tool-modal-content tool-modal-flexcol">
+      <h2>Split PDF</h2>
+      <div class="tool-modal-row">
+        <label for="split-input" class="tool-modal-label">Select PDF:</label>
+        <input type="file" id="split-input" accept=".pdf" style="width: 220px;">
+      </div>
+      <div class="tool-modal-row">
+        <label for="split-filename" class="tool-modal-label">Output Zip Filename:</label>
+        <input type="text" id="split-filename" disabled style="width: 220px; display:inline-block;"> <span
+          style="margin-left:2px;">.zip</span>
+      </div>
+      <div class="tool-modal-row">
+        <span style="font-size:0.95em;color:#666;">Splitting will download a zip file containing all split PDFs.</span>
+      </div>
+
+      <!-- Split method selection -->
+      <div class="tool-modal-row">
+        <label class="tool-modal-label">Split Method:</label>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+            <input type="radio" name="split-method" value="pages" id="split-method-pages" checked>
+            <span>By number of pages</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+            <input type="radio" name="split-method" value="size" id="split-method-size">
+            <span>By file size (MB)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Pages option -->
+      <div class="tool-modal-row" id="split-pages-row">
+        <label for="split-max-pages" class="tool-modal-label">Max pages per chunk:</label>
+        <input type="number" id="split-max-pages" min="1" disabled style="width: 80px;">
+      </div>
+
+      <!-- Size option -->
+      <div class="tool-modal-row" id="split-size-row" style="display: none;">
+        <label for="split-max-size" class="tool-modal-label">Max size per chunk (MB):</label>
+        <input type="number" id="split-max-size" min="1" step="0.1" disabled style="width: 80px;">
+      </div>
+
+      <div id="split-warning" style="color:#c00; font-size:0.95em; display:none; margin-top:4px;"></div>
+      <div class="tool-modal-row tool-modal-btn-row">
+        <button id="split-run" class="tool-modal-run" disabled>Run</button>
+        <button class="tool-modal-cancel" data-modal="split-modal">Cancel</button>
+      </div>
+      <div id="split-message" class="tool-modal-message"></div>
+    </div>
+  </div>
+  <div id="combine-modal" class="tool-modal" style="display:none;">
+    <div class="tool-modal-content tool-modal-flexcol">
+      <h2>Combine PDFs</h2>
+      <div class="tool-modal-row">
+        <label for="combine-input" class="tool-modal-label">Select PDFs:</label>
+        <input type="file" id="combine-input" accept=".pdf" multiple style="width: 220px;">
+      </div>
+      <div class="tool-modal-row">
+        <label for="combine-filename" class="tool-modal-label">Output Filename:</label>
+        <input type="text" id="combine-filename" disabled style="width: 220px; display:inline-block;"> <span
+          style="margin-left:2px;">.pdf</span>
+      </div>
+      <div class="tool-modal-row tool-modal-btn-row">
+        <button id="combine-run" class="tool-modal-run" disabled>Run</button>
+        <button class="tool-modal-cancel" data-modal="combine-modal">Cancel</button>
+      </div>
+      <div id="combine-message" class="tool-modal-message"></div>
+    </div>
+  </div>
+
+  <!-- Flatten PDF Modal -->
+  <div id="flatten-modal" class="tool-modal" style="display:none;">
+    <div class="tool-modal-content tool-modal-flexcol">
+      <h2>Flatten PDF</h2>
+      <div class="tool-modal-row">
+        <label for="flatten-input" class="tool-modal-label">Select PDF:</label>
+        <input type="file" id="flatten-input" accept=".pdf" style="width: 220px;">
+      </div>
+      <div class="tool-modal-row">
+        <label for="flatten-filename" class="tool-modal-label">Output Filename:</label>
+        <input type="text" id="flatten-filename" disabled style="width: 220px; display:inline-block;"> <span
+          style="font-size:0.9em; color:#666;">.pdf</span>
+      </div>
+      <div class="tool-modal-row">
+        <label class="tool-modal-label">
+          <input type="checkbox" id="flatten-remove-links" style="margin-right: 8px;">
+          Remove hyperlinks
+        </label>
+      </div>
+      <div class="tool-modal-row">
+        <label class="tool-modal-label">
+          <input type="checkbox" id="flatten-keep-annotations" style="margin-right: 8px;">
+          Keep annotations (don't flatten markup)
+        </label>
+      </div>
+      <div class="tool-modal-row">
+        <label class="tool-modal-label">
+          <input type="checkbox" id="flatten-keep-transparency" style="margin-right: 8px;">
+          Keep transparency
+        </label>
+      </div>
+      <div class="tool-modal-row tool-modal-btn-row">
+        <button id="flatten-run" class="tool-modal-run" disabled>Run</button>
+        <button class="tool-modal-cancel" data-modal="flatten-modal">Cancel</button>
+      </div>
+      <div id="flatten-message" class="tool-modal-message"></div>
+    </div>
+  </div>
+
+  <!-- Split Progress Modal -->
+  <div id="split-progress-modal" class="tool-modal" style="display:none;">
+    <div class="tool-modal-content" style="max-width: 600px;">
+      <h2>Splitting PDF</h2>
+      <div class="progress-info">
+        <div class="progress-text">
+          <div id="progress-pages">Processing page 0 of 0</div>
+          <div id="progress-chunks">Chunk 0 of 0 complete</div>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+          <div id="progress-percentage">0%</div>
+        </div>
+        <div id="progress-status">Initializing...</div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="box-shadow-top">
+    <div class="footer-links">
+      City of Raleigh Planning and Development
+    </div>
+    <br style="margin-bottom:5px;">
+  </footer>
+
+  <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+
+</html>

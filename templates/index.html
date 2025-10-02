@@ -1,0 +1,78 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+<div id="main-page-container">
+    <div class="pdf-tools-header">
+        <h1>PDF Manager Tools</h1>
+        <p>Select a tool below to manage your PDF files</p>
+    </div>
+    
+    <div class="pdf-tools-grid">
+        <div class="pdf-tool-card" onclick="openModal('compress-modal')">
+            <div class="pdf-tool-icon">
+                <i class="fas fa-file-archive"></i>
+            </div>
+            <div class="pdf-tool-content">
+                <h3>Compress PDF</h3>
+                <p>Reduce the file size of your PDF documents while maintaining quality</p>
+            </div>
+            <div class="pdf-tool-action">
+                <button class="pdf-tool-button">
+                    <span>Compress</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="pdf-tool-card" onclick="openModal('split-modal')">
+            <div class="pdf-tool-icon">
+                <i class="fas fa-file-code"></i>
+            </div>
+            <div class="pdf-tool-content">
+                <h3>Split PDF</h3>
+                <p>Break down large PDF files into smaller, manageable chunks</p>
+            </div>
+            <div class="pdf-tool-action">
+                <button class="pdf-tool-button">
+                    <span>Split</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="pdf-tool-card" onclick="openModal('combine-modal')">
+            <div class="pdf-tool-icon">
+                <i class="fas fa-layer-group"></i>
+            </div>
+            <div class="pdf-tool-content">
+                <h3>Combine PDFs</h3>
+                <p>Merge multiple PDF files into a single document</p>
+            </div>
+            <div class="pdf-tool-action">
+                <button class="pdf-tool-button">
+                    <span>Combine</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="pdf-tool-card" onclick="openModal('flatten-modal')">
+            <div class="pdf-tool-icon">
+                <i class="fas fa-file-alt"></i>
+            </div>
+            <div class="pdf-tool-content">
+                <h3>Flatten PDF</h3>
+                <p>Remove interactive elements and convert to static content</p>
+            </div>
+            <div class="pdf-tool-action">
+                <button class="pdf-tool-button">
+                    <span>Flatten</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
