@@ -1,5 +1,8 @@
 env/
 manage_pdfs/__pycache__/
+dist/
+build/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

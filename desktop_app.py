@@ -3,6 +3,8 @@ import threading
 import time
 import sys
 import os
+import socket
+from contextlib import closing
 from app import app
 
 def get_resource_path(relative_path):
@@ -14,27 +16,38 @@ def get_resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-def start_flask():
+def find_free_port():
+    """Find a free port to run Flask on"""
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(('', 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
+def start_flask(port):
     """Start Flask in a separate thread"""
-    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+    app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False, threaded=True)
 
 def create_window():
     """Create the desktop window"""
+    # Find a free port
+    port = find_free_port()
+    
     # Start Flask in background
-    flask_thread = threading.Thread(target=start_flask, daemon=True)
+    flask_thread = threading.Thread(target=start_flask, args=(port,), daemon=True)
     flask_thread.start()
     
     # Wait a moment for Flask to start
-    time.sleep(2)
+    time.sleep(3)
     
     # Create desktop window
     webview.create_window(
         'PlanDev PDF Manager',
-        'http://127.0.0.1:5000',
-        width=1200,
-        height=800,
+        f'http://127.0.0.1:{port}',
+        width=1300,
+        height=1000,
         resizable=True,
-        min_size=(800, 600)
+        min_size=(600, 600)
     )
     webview.start(debug=False)
 
