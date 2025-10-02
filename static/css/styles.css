@@ -438,6 +438,16 @@ footer {
     text-align: center;
 }
 
+/* Folder input styles */
+.tool-modal-row button {
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.tool-modal-row button:hover {
+    background: #555 !important;
+}
+
 /* Spinner overlay for tool modals */
 #tool-spinner-overlay {
     position: fixed;

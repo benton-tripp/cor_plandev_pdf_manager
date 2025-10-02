@@ -24,8 +24,29 @@ if DEBUG:
 else:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Create a temporary directory for file operations
-TEMP_FOLDER = tempfile.mkdtemp(prefix='pdf_management_')
+# Create default output folder in user's Documents
+def get_default_output_folder():
+    """Get default output folder - Documents/PDF_Manager_Output"""
+    try:
+        # Try to get Documents folder
+        if os.name == 'nt':  # Windows
+            documents = os.path.join(os.path.expanduser('~'), 'Documents')
+        else:  # macOS/Linux
+            documents = os.path.join(os.path.expanduser('~'), 'Documents')
+        
+        output_folder = os.path.join(documents, 'PDF_Manager_Output')
+        os.makedirs(output_folder, exist_ok=True)
+        return output_folder
+    except:
+        # Fallback to temp folder if Documents not accessible
+        return tempfile.mkdtemp(prefix='pdf_management_')
+
+# Create default output directory
+DEFAULT_OUTPUT_FOLDER = get_default_output_folder()
+logging.debug(f"Default output folder: {DEFAULT_OUTPUT_FOLDER}")
+
+# Create a temporary directory for intermediate file operations
+TEMP_FOLDER = tempfile.mkdtemp(prefix='pdf_management_temp_')
 logging.debug(f"Created temporary folder: {TEMP_FOLDER}")
 
 # Ensure cleanup on exit
@@ -38,7 +59,8 @@ atexit.register(cleanup_temp_folder)
 
 app = Flask(__name__)
 app.secret_key = 'supersecretkey'  # Needed for session
-app.config['UPLOAD_FOLDER'] = TEMP_FOLDER
+app.config['UPLOAD_FOLDER'] = TEMP_FOLDER  # For temporary uploads
+app.config['OUTPUT_FOLDER'] = DEFAULT_OUTPUT_FOLDER  # For final outputs
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'svg'}
 
 # In-memory job state (for demo only)
@@ -55,6 +77,11 @@ split_progress = {}
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/api/get_default_output_folder')
+def get_default_output_folder_api():
+    """Return the default output folder path"""
+    return jsonify({'folder': app.config['OUTPUT_FOLDER']})
 
 def allowed_file(filename, allowed=ALLOWED_EXTENSIONS):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed
@@ -86,6 +113,7 @@ def api_compress_pdf():
     try:
         input_pdf = request.files.get('input_pdf')
         output_filename = request.form.get('output_filename')
+        output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
         should_flatten = request.form.get('flatten', 'false').lower() == 'true'
         
         if not input_pdf or not output_filename:
@@ -93,6 +121,9 @@ def api_compress_pdf():
         # Ensure .pdf extension
         if not output_filename.lower().endswith('.pdf'):
             output_filename += '.pdf'
+        
+        # Ensure output folder exists
+        os.makedirs(output_folder, exist_ok=True)
             
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
         input_pdf.save(input_path)
@@ -109,7 +140,7 @@ def api_compress_pdf():
         else:
             compress_input_path = input_path
         
-        output_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(output_filename))
+        output_path = os.path.join(output_folder, secure_filename(output_filename))
         result = compress_pdf(compress_input_path, output_path)
         
         # Clean up temporary flattened file if it was created
@@ -117,8 +148,7 @@ def api_compress_pdf():
             os.unlink(temp_flattened_path)
         
         if result:
-            rel_path = os.path.relpath(output_path, app.config['UPLOAD_FOLDER'])
-            return jsonify({'success': True, 'filename': rel_path, 'error': None})
+            return jsonify({'success': True, 'filename': output_path, 'error': None})
         else:
             return jsonify({'success': False, 'error': 'Compression failed.'})
     except Exception as e:
@@ -129,6 +159,7 @@ def api_flatten_pdf():
     try:
         input_pdf = request.files.get('input_pdf')
         output_filename = request.form.get('output_filename')
+        output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
         remove_links = request.form.get('remove_links', 'false').lower() == 'true'
         remove_annotations = request.form.get('remove_annotations', 'true').lower() == 'true'
         flatten_transparency = request.form.get('flatten_transparency', 'false').lower() == 'true'
@@ -139,21 +170,23 @@ def api_flatten_pdf():
         # Ensure .pdf extension
         if not output_filename.lower().endswith('.pdf'):
             output_filename += '.pdf'
+        
+        # Ensure output folder exists
+        os.makedirs(output_folder, exist_ok=True)
             
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
         input_pdf.save(input_path)
-        output_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(output_filename))
+        output_path = os.path.join(output_folder, secure_filename(output_filename))
         
         result = flatten_pdf(input_path, output_path, remove_links=remove_links, remove_annotations=remove_annotations, flatten_transparency=flatten_transparency)
         if result:
-            rel_path = os.path.relpath(output_path, app.config['UPLOAD_FOLDER'])
-            return jsonify({'success': True, 'filename': rel_path, 'error': None})
+            return jsonify({'success': True, 'filename': output_path, 'error': None})
         else:
             return jsonify({'success': False, 'error': 'Flattening failed.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, max_chunk_size_mb, output_zip):
+def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, max_chunk_size_mb, output_zip, output_folder):
     """Run PDF split with progress tracking"""
     try:
         
@@ -170,8 +203,16 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
         
         # Call split function with progress callback - no throttling
         def progress_callback(current_page, total_pages, current_chunk, total_chunks, message):
+            # Calculate progress as 70% for pages + 30% for chunks
+            # This gives users feedback on both page processing AND chunk completion
+            if total_pages > 0 and total_chunks > 0:
+                page_progress = (current_page / total_pages) * 70
+                chunk_progress = (current_chunk / total_chunks) * 30
+                percentage = int(page_progress + chunk_progress)
+            else:
+                percentage = 0
+            
             # Always update the progress dictionary with every callback
-            percentage = int((current_page / max(total_pages, 1)) * 100)
             split_progress[job_id] = {
                 'status': 'processing',
                 'current_page': current_page,
@@ -205,7 +246,7 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
             zipname = output_zip
             if not zipname.lower().endswith('.zip'):
                 zipname += '.zip'
-            zip_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(zipname))
+            zip_path = os.path.join(output_folder, secure_filename(zipname))
             with zipfile.ZipFile(zip_path, 'w') as zipf:
                 for fname in os.listdir(temp_dir):
                     fpath = os.path.join(temp_dir, fname)
@@ -213,7 +254,7 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
                         zipf.write(fpath, arcname=fname)
             
             shutil.rmtree(temp_dir)
-            rel_path = os.path.relpath(zip_path, app.config['UPLOAD_FOLDER'])
+            final_path = zip_path
             
             # Mark as complete
             split_progress[job_id] = {
@@ -224,7 +265,7 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
                 'total_chunks': split_progress[job_id]['total_chunks'],
                 'percentage': 100,
                 'message': 'Complete!',
-                'zipfile': rel_path
+                'zipfile': final_path
             }
         else:
             split_progress[job_id] = {
@@ -251,6 +292,7 @@ def api_split_pdf():
         
         input_pdf = request.files.get('input_pdf')
         output_zip = request.form.get('output_zip')
+        output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
         max_pages = request.form.get('max_pages_per_chunk')
         max_size_mb = request.form.get('max_size_mb')  # New parameter
         
@@ -272,13 +314,16 @@ def api_split_pdf():
         # Create a temp output dir for split files
         temp_dir = tempfile.mkdtemp(dir=app.config['UPLOAD_FOLDER'])
         
+        # Ensure output folder exists
+        os.makedirs(output_folder, exist_ok=True)
+        
         # Generate job ID
         job_id = str(uuid.uuid4())
         
         # Start split in background thread
         split_thread = threading.Thread(
             target=split_pdf_with_progress,
-            args=(job_id, input_path, temp_dir, max_pages, max_size_mb, output_zip)
+            args=(job_id, input_path, temp_dir, max_pages, max_size_mb, output_zip, output_folder)
         )
         split_thread.daemon = True
         split_thread.start()
@@ -294,10 +339,14 @@ def api_combine_pdfs():
     try:
         pdf_files = request.files.getlist('pdf_list')
         output_filename = request.form.get('output_filename')
+        output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
         should_flatten = request.form.get('flatten', 'false').lower() == 'true'
         
         if not pdf_files or not output_filename:
             return jsonify({'success': False, 'error': 'Missing required fields.'}), 400
+        
+        # Ensure output folder exists
+        os.makedirs(output_folder, exist_ok=True)
         
         input_paths = []
         flattened_paths = []
@@ -326,7 +375,7 @@ def api_combine_pdfs():
         
         if not output_filename.lower().endswith('.pdf'):
             output_filename += '.pdf'
-        output_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(output_filename))
+        output_path = os.path.join(output_folder, secure_filename(output_filename))
         
         result = combine_pdfs(input_paths, output_path)
         
@@ -336,8 +385,7 @@ def api_combine_pdfs():
                 os.unlink(fp)
         
         if result:
-            rel_path = os.path.relpath(output_path, app.config['UPLOAD_FOLDER'])
-            return jsonify({'success': True, 'filename': rel_path, 'error': None})
+            return jsonify({'success': True, 'filename': output_path, 'error': None})
         else:
             return jsonify({'success': False, 'error': 'Combine failed.'})
     except Exception as e:

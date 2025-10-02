@@ -99,6 +99,7 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
         
         # Calculate padding width based on total number of chunks
         padding_width = len(str(len(chunks)))
+        chunks_completed = 0  # Track completed chunks separately
         for idx, page_range in enumerate(chunks, 1):
             # Zero-pad the index for proper sorting
             padded_idx = str(idx).zfill(padding_width)
@@ -109,15 +110,16 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
                 file_size = os.path.getsize(out_path)
                 logging.info(f"Skipping chunk {idx}: {out_path} already exists ({file_size/1024:,} KB)")
                 current_page_count += len(page_range)
+                chunks_completed += 1
                 if progress_callback:
-                    progress_callback(current_page_count, total_pages, idx, total_chunks, f"Skipped chunk {idx} (already exists)")
+                    progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Skipped chunk {idx} (already exists)")
                 continue
             
             new_doc = fitz.open()
             
             # Progress callback for starting this chunk
             if progress_callback:
-                progress_callback(current_page_count, total_pages, idx-1, total_chunks, f"Starting chunk {idx} ({len(page_range)} pages)")
+                progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Starting chunk {idx} ({len(page_range)} pages)")
             
             # Insert pages one at a time to better control image duplication
             # This preserves links and annotations while minimizing duplication
@@ -132,14 +134,14 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
                 # Progress callback AFTER each page insertion - now we've actually processed it
                 current_page_count += 1
                 if progress_callback:
-                    progress_callback(current_page_count, total_pages, idx-1, total_chunks, f"Processed page {current_page_count} for chunk {idx}")
+                    progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Processed page {current_page_count} for chunk {idx}")
             
             # Skip image analysis - it's too slow for large embedded images
             logging.debug(f"Completed inserting all pages for chunk {idx}")
             
             # Progress callback for saving - ensure this gets sent and processed
             if progress_callback:
-                progress_callback(current_page_count, total_pages, idx-1, total_chunks, f"Saving chunk {idx}...")
+                progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Saving chunk {idx}...")
                 # Force immediate logging to verify this callback is made
                 logging.info(f"SAVING CALLBACK SENT: Saving chunk {idx}... (page {current_page_count}/{total_pages})")
                 # Add a small delay to ensure this callback gets processed before the next one
@@ -150,26 +152,25 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
             # This is key to preventing the size explosion while preserving content
             new_doc.save(out_path, garbage=4, deflate=True, clean=True)
             
-            # Progress callback immediately after save completes
-            if progress_callback:
-                progress_callback(current_page_count, total_pages, idx-1, total_chunks, f"Saved chunk {idx} to disk")
-                logging.info(f"Chunk {idx} saved to disk - {current_page_count} pages processed so far")
-            
             new_doc.close()
             
             # Log file size for monitoring
             file_size = os.path.getsize(out_path)
             logging.info(f"Saved chunk {idx}: {out_path} ({len(page_range)} pages, {file_size/1024:,} KB)")
             
+            # Increment chunks completed AFTER successful save
+            chunks_completed += 1
+            
             # Progress callback for completed chunk - now this chunk is complete
             if progress_callback:
-                progress_callback(current_page_count, total_pages, idx, total_chunks, f"Completed chunk {idx} ({len(page_range)} pages)")
+                progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Completed chunk {idx} ({len(page_range)} pages)")
+                logging.info(f"Chunk {idx} completed - {chunks_completed}/{total_chunks} chunks done")
         
         doc.close()
         
         # Final progress callback
         if progress_callback:
-            progress_callback(total_pages, total_pages, total_chunks, total_chunks, "Split complete!")
+            progress_callback(total_pages, total_pages, chunks_completed, total_chunks, "Split complete!")
         
         return True
     except Exception as e:

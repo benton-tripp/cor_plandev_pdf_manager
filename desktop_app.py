@@ -5,6 +5,8 @@ import sys
 import os
 import socket
 from contextlib import closing
+from tkinter import filedialog
+import tkinter as tk
 from app import app
 
 def get_resource_path(relative_path):
@@ -24,6 +26,31 @@ def find_free_port():
         port = s.getsockname()[1]
     return port
 
+class Api:
+    """API class for webview to interact with Python"""
+    
+    def select_folder(self):
+        """Open folder selection dialog"""
+        try:
+            # Create a root window and hide it
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            
+            # Open folder dialog
+            folder_path = filedialog.askdirectory(
+                title="Select Output Folder",
+                initialdir=os.path.expanduser("~/Documents")
+            )
+            
+            # Clean up
+            root.destroy()
+            
+            return folder_path if folder_path else None
+        except Exception as e:
+            print(f"Error selecting folder: {e}")
+            return None
+
 def start_flask(port):
     """Start Flask in a separate thread"""
     app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False, threaded=True)
@@ -40,6 +67,9 @@ def create_window():
     # Wait a moment for Flask to start
     time.sleep(3)
     
+    # Create API instance
+    api = Api()
+    
     # Create desktop window
     webview.create_window(
         'PlanDev PDF Manager',
@@ -47,7 +77,8 @@ def create_window():
         width=1300,
         height=1000,
         resizable=True,
-        min_size=(600, 600)
+        min_size=(600, 600),
+        js_api=api
     )
     webview.start(debug=False)
 

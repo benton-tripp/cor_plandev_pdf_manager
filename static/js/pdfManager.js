@@ -1,6 +1,24 @@
 // pdfManager.js
 import {state} from './state.js';
 
+let defaultOutputFolder = '';
+
+// Load default output folder on page load
+$(document).ready(function() {
+  $.get('/api/get_default_output_folder')
+    .done(function(data) {
+      defaultOutputFolder = data.folder;
+      // Set default values in all output folder inputs
+      $('#compress-output-folder').val(defaultOutputFolder);
+      $('#split-output-folder').val(defaultOutputFolder);
+      $('#combine-output-folder').val(defaultOutputFolder);
+      $('#flatten-output-folder').val(defaultOutputFolder);
+    })
+    .fail(function() {
+      console.warn('Could not load default output folder');
+    });
+});
+
 // open the modal with the given id
 function openModal(id) {
   $('#' + id).fadeIn(200);
@@ -14,6 +32,7 @@ function closeModal(id) {
   if (id === 'split-modal') {
     $('#split-input').val('');
     $('#split-filename').val('').prop('disabled', true);
+    $('#split-output-folder').val(defaultOutputFolder);
     $('#split-max-pages').val('').prop('disabled', true);
     $('#split-max-size').val('').prop('disabled', true);
     // Reset radio buttons to default (pages)
@@ -26,16 +45,19 @@ function closeModal(id) {
     // Clear inputs and reset flatten checkbox for compress modal
     $('#compress-input').val('');
     $('#compress-filename').val('').prop('disabled', true);
+    $('#compress-output-folder').val(defaultOutputFolder);
     $('#compress-flatten').prop('checked', false);
   } else if (id === 'combine-modal') {
     // Clear inputs and reset flatten checkbox for combine modal
     $('#combine-input').val('');
     $('#combine-filename').val('').prop('disabled', true);
+    $('#combine-output-folder').val(defaultOutputFolder);
     $('#combine-flatten').prop('checked', false);
   } else if (id === 'flatten-modal') {
     // Clear inputs and reset checkboxes for flatten modal
     $('#flatten-input').val('');
     $('#flatten-filename').val('').prop('disabled', true);
+    $('#flatten-output-folder').val(defaultOutputFolder);
     $('#flatten-remove-links').prop('checked', false);
     $('#flatten-keep-annotations').prop('checked', false);
     $('#flatten-keep-transparency').prop('checked', false);
@@ -79,14 +101,14 @@ function updateSplitProgress(currentPage, totalPages, currentChunk, totalChunks,
     $('#progress-pages').text('Initializing...');
   }
   
-  // Better chunk display
+  // Better chunk display - show current completion status with context
   if (totalChunks > 0) {
-    if (message && message.includes('Completed chunk')) {
-      $('#progress-chunks').text(`${currentChunk} of ${totalChunks} chunks complete`);
-    } else if (message && (message.includes('Saving chunk') || message.includes('Processed page'))) {
-      $('#progress-chunks').text(`Working on chunk ${currentChunk + 1} of ${totalChunks}`);
+    if (message && message.includes('Starting chunk')) {
+      $('#progress-chunks').text(`${currentChunk} of ${totalChunks} chunks complete (starting chunk ${currentChunk + 1})`);
+    } else if (message && message.includes('Saving chunk')) {
+      $('#progress-chunks').text(`${currentChunk} of ${totalChunks} chunks complete (saving chunk ${currentChunk + 1})`);
     } else {
-      $('#progress-chunks').text(`0 of ${totalChunks} chunks complete`);
+      $('#progress-chunks').text(`${currentChunk} of ${totalChunks} chunks complete`);
     }
   } else {
     $('#progress-chunks').text('Calculating chunks...');
@@ -126,7 +148,7 @@ function pollSplitProgress(jobId) {
             hideSplitProgress();
             closeModal('split-modal');
             if (data.zipfile) {
-              window.location = '/download/' + encodeURIComponent(data.zipfile);
+              alert('PDF split successfully!\nSaved to: ' + data.zipfile);
             }
           }, 1000); // Show 100% for a moment before closing
         } else if (data.status === 'error') {
@@ -155,10 +177,12 @@ let splitTotalPages = 0;
 function validateCompressInputs() {
   let file = $('#compress-input')[0].files[0];
   let fname = $('#compress-filename').val();
+  let outputFolder = $('#compress-output-folder').val();
   
   // More permissive filename validation - allow most common filename characters
   let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-  let canRun = file && isValidFilename;
+  let isValidFolder = outputFolder && outputFolder.trim().length > 0;
+  let canRun = file && isValidFilename && isValidFolder;
   
   $('#compress-run').prop('disabled', !canRun);
 }
@@ -167,10 +191,12 @@ function validateCompressInputs() {
 function validateSplitInputs() {
   let file = $('#split-input')[0].files[0];
   let fname = $('#split-filename').val();
+  let outputFolder = $('#split-output-folder').val();
   let method = $('input[name="split-method"]:checked').val();
   
   let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-  let canRun = file && isValidFilename && splitTotalPages > 1;
+  let isValidFolder = outputFolder && outputFolder.trim().length > 0;
+  let canRun = file && isValidFilename && isValidFolder && splitTotalPages > 1;
   
   if (method === 'pages') {
     let maxPages = parseInt($('#split-max-pages').val());
@@ -180,7 +206,7 @@ function validateSplitInputs() {
     canRun = canRun && maxSize > 0;
   }
   
-  console.log('Validation:', {file: !!file, fname, method, isValidFilename, splitTotalPages, canRun});
+  console.log('Validation:', {file: !!file, fname, method, isValidFilename, isValidFolder, splitTotalPages, canRun});
   
   $('#split-run').prop('disabled', !canRun);
 }
@@ -189,9 +215,11 @@ function validateSplitInputs() {
 function validateCombineInputs() {
     let files = $('#combine-input')[0].files;
     let fname = $('#combine-filename').val();
+    let outputFolder = $('#combine-output-folder').val();
     
     let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-    let canRun = files.length > 0 && isValidFilename;
+    let isValidFolder = outputFolder && outputFolder.trim().length > 0;
+    let canRun = files.length > 0 && isValidFilename && isValidFolder;
     
     $('#combine-run').prop('disabled', !canRun);
 }
@@ -200,9 +228,11 @@ function validateCombineInputs() {
 function validateFlattenInputs() {
     let file = $('#flatten-input')[0].files[0];
     let fname = $('#flatten-filename').val();
+    let outputFolder = $('#flatten-output-folder').val();
     
     let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-    let canRun = file && isValidFilename;
+    let isValidFolder = outputFolder && outputFolder.trim().length > 0;
+    let canRun = file && isValidFilename && isValidFolder;
     
     $('#flatten-run').prop('disabled', !canRun);
 }
@@ -230,18 +260,21 @@ export function compressSplitCombinePDFs(window, document) {
     }
   });
   $('#compress-filename').on('input', validateCompressInputs);
+  $('#compress-output-folder').on('input', validateCompressInputs);
   $('#compress-run').on('click', function() {
     let file = $('#compress-input')[0].files[0];
     let fname = $('#compress-filename').val();
+    let outputFolder = $('#compress-output-folder').val();
     let flatten = $('#compress-flatten').is(':checked');
     if (!file || !fname) return;
 
-    console.log('Compress run clicked:', {file: file.name, fname, flatten});
+    console.log('Compress run clicked:', {file: file.name, fname, outputFolder, flatten});
 
     showToolSpinner();
     let formData = new FormData();
     formData.append('input_pdf', file);
     formData.append('output_filename', fname);
+    formData.append('output_folder', outputFolder);
     formData.append('flatten', flatten ? 'true' : 'false');
     $.ajax({
       url: '/api/compress_pdf',
@@ -252,9 +285,9 @@ export function compressSplitCombinePDFs(window, document) {
       success: function(data) {
         hideToolSpinner();
         if (data.success && data.filename) {
-          // Immediately close modal and start download
+          // Show success message with file location
           closeModal('compress-modal');
-          window.location = '/download/' + encodeURIComponent(data.filename);
+          alert('File compressed successfully!\nSaved to: ' + data.filename);
         } else if (!data.success && data.error) {
           $('#compress-message').text('Error: ' + data.error);
         } else {
@@ -351,8 +384,8 @@ export function compressSplitCombinePDFs(window, document) {
       splitTotalPages = 0; // Reset page count
     }
   });
-  $('#split-filename, #split-max-pages, #split-max-size').on('input', validateSplitInputs);
-  
+  $('#split-filename, #split-max-pages, #split-max-size, #split-output-folder').on('input', validateSplitInputs);
+
   $('#split-run').on('click', function() {
     let file = $('#split-input')[0].files[0];
     let fname = $('#split-filename').val();
@@ -375,9 +408,12 @@ export function compressSplitCombinePDFs(window, document) {
       return;
     }
     
+    let outputFolder = $('#split-output-folder').val();
+    
     let formData = new FormData();
     formData.append('input_pdf', file);
     formData.append('output_zip', fname);
+    formData.append('output_folder', outputFolder);
     
     if (method === 'pages') {
       let maxPages = parseInt($('#split-max-pages').val());
@@ -448,13 +484,15 @@ export function compressSplitCombinePDFs(window, document) {
     validateCombineInputs();
   });
   $('#combine-filename').on('input', validateCombineInputs);
+  $('#combine-output-folder').on('input', validateCombineInputs);
   $('#combine-run').on('click', function() {
     let files = $('#combine-input')[0].files;
     let fname = $('#combine-filename').val();
+    let outputFolder = $('#combine-output-folder').val();
     let flatten = $('#combine-flatten').is(':checked');
     if (!(files.length > 0 && fname)) return;
 
-    console.log('Combine run clicked:', {fileCount: files.length, fname, flatten});
+    console.log('Combine run clicked:', {fileCount: files.length, fname, outputFolder, flatten});
 
     showToolSpinner();
     let formData = new FormData();
@@ -462,6 +500,7 @@ export function compressSplitCombinePDFs(window, document) {
       formData.append('pdf_list', files[i]);
     }
     formData.append('output_filename', fname);
+    formData.append('output_folder', outputFolder);
     formData.append('flatten', flatten ? 'true' : 'false');
     $.ajax({
       url: '/api/combine_pdfs',
@@ -472,9 +511,9 @@ export function compressSplitCombinePDFs(window, document) {
       success: function(data) {
         hideToolSpinner();
         if (data.success && data.filename) {
-          // Immediately close modal and start download
+          // Show success message with file location
           closeModal('combine-modal');
-          window.location = '/download/' + encodeURIComponent(data.filename);
+          alert('PDFs combined successfully!\nSaved to: ' + data.filename);
         } else if (!data.success && data.error) {
           $('#combine-message').text('Error: ' + data.error);
         } else {
@@ -501,20 +540,23 @@ export function compressSplitCombinePDFs(window, document) {
     }
   });
   $('#flatten-filename').on('input', validateFlattenInputs);
+  $('#flatten-output-folder').on('input', validateFlattenInputs);
   $('#flatten-run').on('click', function() {
     let file = $('#flatten-input')[0].files[0];
     let fname = $('#flatten-filename').val();
+    let outputFolder = $('#flatten-output-folder').val();
     let removeLinks = $('#flatten-remove-links').is(':checked');
     let keepAnnotations = $('#flatten-keep-annotations').is(':checked');
     let keepTransparency = $('#flatten-keep-transparency').is(':checked');
     if (!file || !fname) return;
 
-    console.log('Flatten run clicked:', {file: file.name, fname, removeLinks, keepAnnotations, keepTransparency});
+    console.log('Flatten run clicked:', {file: file.name, fname, outputFolder, removeLinks, keepAnnotations, keepTransparency});
 
     showToolSpinner();
     let formData = new FormData();
     formData.append('input_pdf', file);
     formData.append('output_filename', fname);
+    formData.append('output_folder', outputFolder);
     formData.append('remove_links', removeLinks ? 'true' : 'false');
     formData.append('remove_annotations', keepAnnotations ? 'false' : 'true'); // Inverted logic
     formData.append('flatten_transparency', keepTransparency ? 'false' : 'true'); // Inverted logic
@@ -527,9 +569,9 @@ export function compressSplitCombinePDFs(window, document) {
       success: function(data) {
         hideToolSpinner();
         if (data.success && data.filename) {
-          // Immediately close modal and start download
+          // Show success message with file location
           closeModal('flatten-modal');
-          window.location = '/download/' + encodeURIComponent(data.filename);
+          alert('PDF flattened successfully!\nSaved to: ' + data.filename);
         } else if (!data.success && data.error) {
           $('#flatten-message').text('Error: ' + data.error);
         } else {
@@ -541,6 +583,57 @@ export function compressSplitCombinePDFs(window, document) {
         $('#flatten-message').text('Error: ' + xhr.responseText);
       }
     });
+  });
+
+
+
+  // Folder browsing functionality for desktop app
+  // Use webview API for proper folder selection
+  
+  function selectFolder(inputId, validationFunction) {
+    // Check if we're running in a webview (desktop app)
+    if (window.pywebview && window.pywebview.api) {
+      // Use webview folder selection
+      window.pywebview.api.select_folder().then(function(folderPath) {
+        if (folderPath) {
+          $(inputId).val(folderPath);
+          validationFunction();
+        }
+      }).catch(function(error) {
+        console.log('Folder selection error:', error);
+        // Fallback to manual entry
+        let currentPath = $(inputId).val();
+        let newPath = prompt('Enter output folder path:', currentPath || defaultOutputFolder);
+        if (newPath && newPath.trim()) {
+          $(inputId).val(newPath.trim());
+          validationFunction();
+        }
+      });
+    } else {
+      // Fallback for web browsers - just allow manual entry
+      let currentPath = $(inputId).val();
+      let newPath = prompt('Enter output folder path:', currentPath || defaultOutputFolder);
+      if (newPath && newPath.trim()) {
+        $(inputId).val(newPath.trim());
+        validationFunction();
+      }
+    }
+  }
+  
+  $('#compress-browse-folder').on('click', function() {
+    selectFolder('#compress-output-folder', validateCompressInputs);
+  });
+
+  $('#split-browse-folder').on('click', function() {
+    selectFolder('#split-output-folder', validateSplitInputs);
+  });
+
+  $('#combine-browse-folder').on('click', function() {
+    selectFolder('#combine-output-folder', validateCombineInputs);
+  });
+
+  $('#flatten-browse-folder').on('click', function() {
+    selectFolder('#flatten-output-folder', validateFlattenInputs);
   });
 
   // Expose openModal globally for navbar links
