@@ -1,1 +1,2 @@
 - Progress bar for splitting PDFs is mest up (messages in UI are not synced or don't update)
+- If you push cancel for the output directory search, it opens a separate popup that it shouldn't
