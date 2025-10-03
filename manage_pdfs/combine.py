@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+"""
+Combine multiple PDF files into a single PDF
+"""
+
 import fitz
 import sys
 import os
@@ -17,6 +22,9 @@ def combine_pdfs(pdf_list, output_path):
             logging.info(f"PDF file {i+1}/{len(pdf_list)}: '{pdf}'")
     try:
         combined = fitz.open()
+        # Sort pdf list to maintain order
+        pdf_list.sort()
+        logging.info(f"Combining {len(pdf_list)} PDFs...")
         for pdf in pdf_list:
             doc = fitz.open(pdf)
             combined.insert_pdf(doc, links=True, annots=True)

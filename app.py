@@ -15,6 +15,10 @@ from manage_pdfs.compress import compress_pdf
 from manage_pdfs.split import split_pdf_with_progress as split_func
 from manage_pdfs.combine import combine_pdfs
 from manage_pdfs.flatten import flatten_pdf
+from manage_pdfs.optimize import optimize_pdf
+from manage_pdfs.extract_pages import extract_pages
+from utils.manage_temp import cleanup_temp_folder
+from utils.manage_output_dir import get_default_output_folder, FolderSelector
 
 DEBUG = True
 
@@ -24,22 +28,6 @@ if DEBUG:
 else:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Create default output folder in user's Documents
-def get_default_output_folder():
-    """Get default output folder - Documents/PDF_Manager_Output"""
-    try:
-        # Try to get Documents folder
-        if os.name == 'nt':  # Windows
-            documents = os.path.join(os.path.expanduser('~'), 'Documents')
-        else:  # macOS/Linux
-            documents = os.path.join(os.path.expanduser('~'), 'Documents')
-        
-        output_folder = os.path.join(documents, 'PDF_Manager_Output')
-        os.makedirs(output_folder, exist_ok=True)
-        return output_folder
-    except:
-        # Fallback to temp folder if Documents not accessible
-        return tempfile.mkdtemp(prefix='pdf_management_')
 
 # Create default output directory
 DEFAULT_OUTPUT_FOLDER = get_default_output_folder()
@@ -50,18 +38,13 @@ TEMP_FOLDER = tempfile.mkdtemp(prefix='pdf_management_temp_')
 logging.debug(f"Created temporary folder: {TEMP_FOLDER}")
 
 # Ensure cleanup on exit
-def cleanup_temp_folder():
-    if os.path.exists(TEMP_FOLDER):
-        shutil.rmtree(TEMP_FOLDER, ignore_errors=True)
-        logging.debug(f"Cleaned up temporary folder: {TEMP_FOLDER}")
-
-atexit.register(cleanup_temp_folder)
+atexit.register(lambda: cleanup_temp_folder(TEMP_FOLDER))
 
 app = Flask(__name__)
 app.secret_key = 'supersecretkey'  # Needed for session
 app.config['UPLOAD_FOLDER'] = TEMP_FOLDER  # For temporary uploads
 app.config['OUTPUT_FOLDER'] = DEFAULT_OUTPUT_FOLDER  # For final outputs
-ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'svg'}
+ALLOWED_EXTENSIONS = {'pdf'}
 
 # In-memory job state (for demo only)
 redaction_jobs = {}
@@ -82,6 +65,21 @@ def index():
 def get_default_output_folder_api():
     """Return the default output folder path"""
     return jsonify({'folder': app.config['OUTPUT_FOLDER']})
+
+@app.route('/api/select_folder', methods=['POST'])
+def api_select_folder():
+    """Open native folder selection dialog"""
+    try:
+        # Use the FolderSelector from utils
+        folder_selector = FolderSelector()
+        selected_folder = folder_selector.select_folder()
+        
+        if selected_folder:
+            return jsonify({'success': True, 'folder': selected_folder})
+        else:
+            return jsonify({'success': False, 'error': 'No folder selected'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 def allowed_file(filename, allowed=ALLOWED_EXTENSIONS):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed
@@ -114,7 +112,7 @@ def api_compress_pdf():
         input_pdf = request.files.get('input_pdf')
         output_filename = request.form.get('output_filename')
         output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
-        should_flatten = request.form.get('flatten', 'false').lower() == 'true'
+        should_optimize = request.form.get('optimize', 'false').lower() == 'true'
         
         if not input_pdf or not output_filename:
             return jsonify({'success': False, 'error': 'Missing required fields.'}), 400
@@ -128,24 +126,23 @@ def api_compress_pdf():
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
         input_pdf.save(input_path)
         
-        # If flattening is requested, flatten first then compress
-        if should_flatten:
-            temp_flattened_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_flattened_{secure_filename(input_pdf.filename)}")
-            flatten_result = flatten_pdf(input_path, temp_flattened_path, 
-                                       remove_links=False, remove_annotations=True, flatten_transparency=False)
-            if not flatten_result:
-                return jsonify({'success': False, 'error': 'Flattening failed.'})
-            # Use flattened file as input for compression
-            compress_input_path = temp_flattened_path
+        # If optimization is requested, optimize first then compress
+        if should_optimize:
+            temp_optimized_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_optimized_{secure_filename(input_pdf.filename)}")
+            optimize_result = optimize_pdf(input_path, temp_optimized_path, aggressive=False)
+            if not optimize_result:
+                return jsonify({'success': False, 'error': 'Optimization failed.'})
+            # Use optimized file as input for compression
+            compress_input_path = temp_optimized_path
         else:
             compress_input_path = input_path
         
         output_path = os.path.join(output_folder, secure_filename(output_filename))
         result = compress_pdf(compress_input_path, output_path)
         
-        # Clean up temporary flattened file if it was created
-        if should_flatten and os.path.exists(temp_flattened_path):
-            os.unlink(temp_flattened_path)
+        # Clean up temporary optimized file if it was created
+        if should_optimize and os.path.exists(temp_optimized_path):
+            os.unlink(temp_optimized_path)
         
         if result:
             return jsonify({'success': True, 'filename': output_path, 'error': None})
@@ -160,9 +157,6 @@ def api_flatten_pdf():
         input_pdf = request.files.get('input_pdf')
         output_filename = request.form.get('output_filename')
         output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
-        remove_links = request.form.get('remove_links', 'false').lower() == 'true'
-        remove_annotations = request.form.get('remove_annotations', 'true').lower() == 'true'
-        flatten_transparency = request.form.get('flatten_transparency', 'false').lower() == 'true'
         
         if not input_pdf or not output_filename:
             return jsonify({'success': False, 'error': 'Missing required fields.'}), 400
@@ -178,7 +172,8 @@ def api_flatten_pdf():
         input_pdf.save(input_path)
         output_path = os.path.join(output_folder, secure_filename(output_filename))
         
-        result = flatten_pdf(input_path, output_path, remove_links=remove_links, remove_annotations=remove_annotations, flatten_transparency=flatten_transparency)
+        # Use the new pixelized flattening with high quality settings
+        result = flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=95)
         if result:
             return jsonify({'success': True, 'filename': output_path, 'error': None})
         else:
@@ -340,7 +335,7 @@ def api_combine_pdfs():
         pdf_files = request.files.getlist('pdf_list')
         output_filename = request.form.get('output_filename')
         output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
-        should_flatten = request.form.get('flatten', 'false').lower() == 'true'
+        should_optimize = request.form.get('optimize', 'false').lower() == 'true'
         
         if not pdf_files or not output_filename:
             return jsonify({'success': False, 'error': 'Missing required fields.'}), 400
@@ -349,27 +344,26 @@ def api_combine_pdfs():
         os.makedirs(output_folder, exist_ok=True)
         
         input_paths = []
-        flattened_paths = []
+        optimized_paths = []
         
-        # Save all input files and optionally flatten them
+        # Save all input files and optionally optimize them
         for i, f in enumerate(pdf_files):
             path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(f.filename))
             f.save(path)
             
-            if should_flatten:
-                # Create flattened version
-                flattened_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_flattened_{i}_{secure_filename(f.filename)}")
-                flatten_result = flatten_pdf(path, flattened_path, 
-                                           remove_links=False, remove_annotations=True, flatten_transparency=False)
-                if not flatten_result:
+            if should_optimize:
+                # Create optimized version
+                optimized_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_optimized_{i}_{secure_filename(f.filename)}")
+                optimize_result = optimize_pdf(path, optimized_path, aggressive=False)
+                if not optimize_result:
                     # Clean up any previously created files
-                    for fp in flattened_paths:
+                    for fp in optimized_paths:
                         if os.path.exists(fp):
                             os.unlink(fp)
-                    return jsonify({'success': False, 'error': f'Flattening failed for file: {f.filename}'})
+                    return jsonify({'success': False, 'error': f'Optimization failed for file: {f.filename}'})
                 
-                input_paths.append(flattened_path)
-                flattened_paths.append(flattened_path)
+                input_paths.append(optimized_path)
+                optimized_paths.append(optimized_path)
             else:
                 input_paths.append(path)
         
@@ -379,8 +373,8 @@ def api_combine_pdfs():
         
         result = combine_pdfs(input_paths, output_path)
         
-        # Clean up temporary flattened files
-        for fp in flattened_paths:
+        # Clean up temporary optimized files
+        for fp in optimized_paths:
             if os.path.exists(fp):
                 os.unlink(fp)
         
@@ -388,6 +382,73 @@ def api_combine_pdfs():
             return jsonify({'success': True, 'filename': output_path, 'error': None})
         else:
             return jsonify({'success': False, 'error': 'Combine failed.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/optimize_pdf', methods=['POST'])
+def api_optimize_pdf():
+    try:
+        input_pdf = request.files.get('input_pdf')
+        output_filename = request.form.get('output_filename')
+        output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
+        aggressive = request.form.get('aggressive') == 'true'
+        
+        if not input_pdf or not output_filename:
+            return jsonify({'success': False, 'error': 'Missing required fields.'}), 400
+        
+        # Ensure .pdf extension
+        if not output_filename.lower().endswith('.pdf'):
+            output_filename += '.pdf'
+        
+        # Ensure output folder exists
+        os.makedirs(output_folder, exist_ok=True)
+            
+        input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
+        input_pdf.save(input_path)
+        output_path = os.path.join(output_folder, secure_filename(output_filename))
+        
+        result = optimize_pdf(input_path, output_path, aggressive=aggressive)
+        if result:
+            return jsonify({'success': True, 'filename': output_path, 'error': None})
+        else:
+            return jsonify({'success': False, 'error': 'Optimization failed.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/extract_pages', methods=['POST'])
+def api_extract_pages():
+    try:
+        input_pdf = request.files.get('input_pdf')
+        output_filename = request.form.get('output_filename')
+        output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
+        pages_string = request.form.get('pages')
+        
+        if not input_pdf or not output_filename or not pages_string:
+            return jsonify({'success': False, 'error': 'Missing required fields.'}), 400
+        
+        # Parse page numbers using the same logic as extract_pages.py
+        from manage_pdfs.extract_pages import parse_page_numbers
+        page_numbers = parse_page_numbers(pages_string)
+        
+        if not page_numbers:
+            return jsonify({'success': False, 'error': 'No valid page numbers provided.'})
+        
+        # Ensure .pdf extension
+        if not output_filename.lower().endswith('.pdf'):
+            output_filename += '.pdf'
+        
+        # Ensure output folder exists
+        os.makedirs(output_folder, exist_ok=True)
+            
+        input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
+        input_pdf.save(input_path)
+        output_path = os.path.join(output_folder, secure_filename(output_filename))
+        
+        result = extract_pages(input_path, output_path, page_numbers)
+        if result:
+            return jsonify({'success': True, 'filename': output_path, 'error': None})
+        else:
+            return jsonify({'success': False, 'error': 'Page extraction failed.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

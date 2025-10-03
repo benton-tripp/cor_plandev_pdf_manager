@@ -1,161 +1,151 @@
-import fitz # PyMuPDF
+#!/usr/bin/env python3
+"""
+True PDF flattening by converting pages to pixelized images
+Renders each page as a high-resolution image and creates a new PDF from the images
+"""
+
+import fitz  # PyMuPDF
 import sys
 import os
 import logging
+import io
+from PIL import Image
 
 logging.basicConfig(level=logging.INFO)
 
-# Usage: python flatten.py input.pdf output.pdf
+# Usage: python flatten.py input.pdf output.pdf [--dpi 300] [--quality high]
 
-def flatten_pdf(input_path, output_path, remove_links=False, remove_annotations=True, flatten_transparency=True):
+def flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=95):
     """
-    Flatten a PDF by converting interactive elements to static content.
+    True PDF flattening by converting each page to a high-resolution pixelized image.
+    
+    This creates a completely flattened PDF where everything becomes pixels:
+    - All text becomes rasterized (no longer selectable or searchable)
+    - All interactive elements (forms, buttons, links) become static pixels
+    - All vector graphics become rasterized
+    - All fonts become pixels (no font embedding issues)
+    - All transparency, layers, and complex effects become flat pixels
+    - Digital signatures become visual pixels (no longer cryptographically valid)
+    - Annotations become permanent visual pixels
     
     Args:
         input_path: Path to input PDF
-        output_path: Path to save flattened PDF
-        remove_links: Whether to remove hyperlinks (default: False, keeps links)
-        remove_annotations: Whether to flatten annotations (default: True)
-        flatten_transparency: Whether to flatten transparent content (default: True)
+        output_path: Path to save pixelized PDF
+        dpi: Resolution for rasterization (default: 300 DPI for high quality)
+        quality: Quality preset - 'low' (150 DPI), 'medium' (200 DPI), 'high' (300 DPI), 'ultra' (600 DPI)
+        jpeg_quality: JPEG compression quality 1-100 (default: 95 for minimal quality loss)
         
-    Note: This function handles:
-    - Form fields (widgets) → converted to static content
-    - Annotations → baked into page content (highlights, comments, etc.)
-    - Hyperlinks → optionally removed
-    - Optional content groups (layers) → visible layers flattened
-    - Transparency → optionally flattened to opaque content
-    - Embedded fonts/images are preserved but made non-interactive
+    Returns:
+        bool: True if successful, False otherwise
     """
     if not os.path.exists(input_path):
         logging.error(f"Error: Input file '{input_path}' does not exist.")
         return False
     
+    # Quality presets
+    quality_presets = {
+        'low': 150,
+        'medium': 200, 
+        'high': 300,
+        'ultra': 600
+    }
+    
+    # Use quality preset if provided
+    if quality in quality_presets:
+        dpi = quality_presets[quality]
+        logging.info(f"Using {quality} quality preset: {dpi} DPI")
+    else:
+        logging.info(f"Using custom DPI: {dpi}")
+    
+
+    
     try:
-        logging.info(f"Flattening '{input_path}'...")
-        doc = fitz.open(input_path)
+        logging.info(f"True pixelized flattening of '{input_path}' at {dpi} DPI...")
         
-        flattened_items = []
+        # Open source PDF
+        source_doc = fitz.open(input_path)
+        page_count = source_doc.page_count
         
-        for page_num in range(doc.page_count):
-            page = doc[page_num]
+        logging.info(f"Processing {page_count} pages...")
+        
+        # Create new empty PDF document for the flattened pages
+        flattened_doc = fitz.open()
+        
+        for page_num in range(page_count):
+            logging.info(f"Pixelizing page {page_num + 1}/{page_count}...")
             
-            # 1. Flatten form fields (widgets) - convert to static content
-            widgets = page.widgets()
-            if widgets:
-                for widget in widgets:
-                    try:
-                        # Remove the widget (form field) - this flattens it
-                        page.delete_widget(widget)
-                        flattened_items.append(f"form field on page {page_num + 1}")
-                    except:
-                        pass
+            # Get the page
+            page = source_doc[page_num]
             
-            # 2. Flatten annotations (if requested) - this handles markup annotations
-            if remove_annotations:
-                annotations = page.annots()
-                if annotations:
-                    for annot in annotations:
-                        try:
-                            # Before deleting, check if it's a markup annotation that needs special handling
-                            annot_type = annot.type[1]  # Get annotation type name
-                            
-                            # For markup annotations (highlights, underlines, strikeouts), 
-                            # PyMuPDF will automatically render them to page content when deleted
-                            if annot_type in ['Highlight', 'Underline', 'StrikeOut', 'Squiggly']:
-                                logging.debug(f"Flattening {annot_type} annotation on page {page_num + 1}")
-                            
-                            # Delete the annotation - PyMuPDF renders it to page content
-                            page.delete_annot(annot)
-                            flattened_items.append(f"{annot_type.lower()} annotation on page {page_num + 1}")
-                        except:
-                            # Fallback for any annotation that can't be processed
-                            try:
-                                page.delete_annot(annot)
-                                flattened_items.append(f"annotation on page {page_num + 1}")
-                            except:
-                                pass
+            # Get page dimensions
+            page_rect = page.rect
+            page_width = page_rect.width
+            page_height = page_rect.height
             
-            # 3. Remove links (if requested)
-            if remove_links:
-                links = page.get_links()
-                if links:
-                    for link in links:
-                        try:
-                            page.delete_link(link)
-                            flattened_items.append(f"link on page {page_num + 1}")
-                        except:
-                            pass
+            # Calculate matrix for the desired DPI
+            # Default PyMuPDF resolution is 72 DPI, so scale accordingly
+            scale = dpi / 72.0
+            matrix = fitz.Matrix(scale, scale)
             
-            # 4. Handle transparency flattening (if requested)
-            if flatten_transparency:
-                try:
-                    # Get page images to check for transparency
-                    images = page.get_images()
-                    for img_xref, *_ in images:
-                        try:
-                            # Extract image info to check for transparency
-                            img_dict = doc.extract_image(img_xref)
-                            if img_dict and 'smask' in img_dict and img_dict['smask']:
-                                flattened_items.append(f"transparent image on page {page_num + 1}")
-                        except:
-                            pass
-                    
-                    # Note: PyMuPDF's save with clean=True will flatten most transparency
-                    # More complex transparency requires rendering the page to image and back
-                    
-                except Exception as e:
-                    logging.debug(f"Could not process transparency on page {page_num + 1}: {e}")
-        
-        # 4. Remove optional content groups (layers) - flatten all layers to visible content
-        try:
-            oc_groups = doc.get_ocgs()  # Fixed method name
-            if oc_groups:
-                # Set all optional content to visible and then remove the groups
-                for oc_xref, oc_info in oc_groups.items():
-                    try:
-                        doc.set_oc(oc_xref, True)  # Make visible
-                    except:
-                        pass
-                flattened_items.append("optional content layers")
-        except AttributeError:
-            # get_ocgs() may not be available in older PyMuPDF versions
-            logging.debug("Optional content groups not supported in this PyMuPDF version")
-        except:
-            logging.debug("Could not process optional content groups")
-        
-        # Log summary of document structure
-        logging.info(f"Document has {doc.page_count} pages")
-        
-        # Check for embedded fonts and images (these are preserved but made non-interactive)
-        try:
-            all_fonts = set()
-            all_images = 0
-            for page_num in range(doc.page_count):
-                page_fonts = doc.get_page_fonts(page_num)
-                all_fonts.update([f[3] for f in page_fonts])  # basefont names
-                all_images += len(doc.get_page_images(page_num))
+            # Render page to pixmap (image) at high resolution
+            # This converts EVERYTHING to pixels: text, vector graphics, forms, annotations, etc.
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
             
-            if all_fonts:
-                logging.info(f"Document contains {len(all_fonts)} unique fonts (preserved)")
-            if all_images:
-                logging.info(f"Document contains {all_images} images (preserved)")
-        except:
-            pass
+            # Convert pixmap to image data
+            if jpeg_quality < 100:
+                # Use PIL for JPEG compression
+                img_data = pixmap.tobytes("png")
+                pil_image = Image.open(io.BytesIO(img_data))
+                
+                # Convert to RGB if needed and apply JPEG compression
+                if pil_image.mode in ("RGBA", "LA", "P"):
+                    # Convert transparency to white background for JPEG
+                    background = Image.new("RGB", pil_image.size, (255, 255, 255))
+                    if pil_image.mode == "P":
+                        pil_image = pil_image.convert("RGBA")
+                    background.paste(pil_image, mask=pil_image.split()[-1] if pil_image.mode in ("RGBA", "LA") else None)
+                    pil_image = background
+                
+                # Save as JPEG with specified quality
+                img_buffer = io.BytesIO()
+                pil_image.save(img_buffer, format="JPEG", quality=jpeg_quality, optimize=True)
+                img_data = img_buffer.getvalue()
+                pil_image = None  # Clean up
+            else:
+                # Use PNG directly from PyMuPDF (always lossless)
+                img_data = pixmap.tobytes("png")
+            
+            # Create a new page in the flattened document with the same dimensions
+            new_page = flattened_doc.new_page(width=page_width, height=page_height)
+            
+            # Insert the pixelized image into the new page
+            # This fills the entire page with the rasterized version
+            img_rect = fitz.Rect(0, 0, page_width, page_height)
+            new_page.insert_image(img_rect, stream=img_data)
+            
+            # Clean up
+            pixmap = None
         
-        # Save the flattened PDF with optimal settings
-        # garbage=4: Remove unused objects and compress object streams
-        # deflate=True: Use deflate compression
-        # clean=True: Clean up and optimize the PDF structure
-        doc.save(output_path, garbage=4, deflate=True, clean=True)
-        doc.close()
+        # Close source document
+        source_doc.close()
         
-        if flattened_items:
-            unique_items = list(set(flattened_items))
-            logging.info(f"Flattened {len(unique_items)} types of elements: {', '.join(unique_items)}")
-        else:
-            logging.info("No interactive elements found to flatten")
+        # Save the completely pixelized PDF
+        logging.info(f"Saving pixelized PDF with {page_count} rasterized pages...")
+        flattened_doc.save(output_path, garbage=4, deflate=True, clean=True)
+        flattened_doc.close()
         
-        logging.info(f"Flattened PDF saved to '{output_path}'")
+        # Calculate file sizes
+        input_size = os.path.getsize(input_path) / (1024 * 1024)
+        output_size = os.path.getsize(output_path) / (1024 * 1024)
+        
+        logging.info(f"Pixelized flattening completed!")
+        logging.info(f"Original size: {input_size:.2f} MB")
+        logging.info(f"Pixelized size: {output_size:.2f} MB")
+        logging.info(f"All content converted to {dpi} DPI pixels")
+        logging.info(f"Text is no longer selectable or searchable")
+        logging.info(f"All interactive elements are now static pixels")
+        logging.info(f"Pixelized PDF saved to '{output_path}'")
+        
         return True
         
     except Exception as e:
@@ -166,18 +156,78 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
         logging.error("Usage: python flatten.py input.pdf output.pdf [options]")
         logging.error("Options:")
-        logging.error("  --remove-links: Remove hyperlinks (default: keep links)")
-        logging.error("  --keep-annotations: Keep annotations (default: flatten annotations)")
-        logging.error("  --keep-transparency: Keep transparency (default: flatten transparency)")
+        logging.error("  --dpi <number>: Resolution for pixelization (default: 300)")
+        logging.error("  --quality <preset>: Quality preset - low/medium/high/ultra (overrides --dpi)")
+        logging.error("  --jpeg-quality <1-100>: JPEG compression quality (default: 95)")
+        logging.error("  --help: Show this help message")
+        logging.error("")
+        logging.error("Quality presets:")
+        logging.error("  low: 150 DPI (smaller files, lower quality)")
+        logging.error("  medium: 200 DPI (balanced)")
+        logging.error("  high: 300 DPI (good quality, default)")
+        logging.error("  ultra: 600 DPI (maximum quality, larger files)")
+        logging.error("")
+        logging.error("This tool converts PDFs to completely pixelized versions:")
+        logging.error("  - All text becomes non-selectable pixels")
+        logging.error("  - All interactive elements become static pixels")
+        logging.error("  - All vector graphics become rasterized")
+        logging.error("  - Perfect visual preservation with zero interactivity")
         sys.exit(1)
+    
+    # Show help if requested
+    if "--help" in sys.argv:
+        print("PDF True Pixelized Flattening Tool")
+        print("=" * 40)
+        print("Converts PDFs to completely rasterized versions where everything becomes pixels.")
+        print("\nFeatures:")
+        print("  ✓ Converts all text to non-selectable pixels")
+        print("  ✓ Removes all interactivity (forms, buttons, links)")
+        print("  ✓ Rasterizes all vector graphics")
+        print("  ✓ Flattens all layers and transparency")
+        print("  ✓ Preserves exact visual appearance")
+        print("  ✓ Eliminates font embedding issues")
+        print("  ✓ Maximum compatibility across viewers")
+        print("\nUse cases:")
+        print("  • Creating truly flat PDFs for archival")
+        print("  • Removing all interactive content permanently")
+        print("  • Converting complex PDFs to simple image-based ones")
+        print("  • Ensuring consistent appearance across all devices")
+        sys.exit(0)
     
     input_pdf = sys.argv[1]
     output_pdf = sys.argv[2]
     
     # Parse optional arguments
-    remove_links = "--remove-links" in sys.argv
-    remove_annotations = "--keep-annotations" not in sys.argv  # Default is to remove
-    flatten_transparency = "--keep-transparency" not in sys.argv  # Default is to flatten
+    dpi = 300  # Default DPI
+    quality = None
+    jpeg_quality = 95
     
-    flatten_pdf(input_pdf, output_pdf, remove_links=remove_links, 
-               remove_annotations=remove_annotations, flatten_transparency=flatten_transparency)
+    for i, arg in enumerate(sys.argv):
+        if arg == "--dpi" and i + 1 < len(sys.argv):
+            try:
+                dpi = int(sys.argv[i + 1])
+                if dpi < 50 or dpi > 1200:
+                    logging.warning(f"DPI {dpi} is outside recommended range (50-1200). Using anyway.")
+            except ValueError:
+                logging.error(f"Invalid DPI value: {sys.argv[i + 1]}")
+                sys.exit(1)
+        elif arg == "--quality" and i + 1 < len(sys.argv):
+            quality = sys.argv[i + 1].lower()
+            if quality not in ['low', 'medium', 'high', 'ultra']:
+                logging.error(f"Invalid quality preset: {quality}. Use: low, medium, high, or ultra")
+                sys.exit(1)
+        elif arg == "--jpeg-quality" and i + 1 < len(sys.argv):
+            try:
+                jpeg_quality = int(sys.argv[i + 1])
+                if jpeg_quality < 1 or jpeg_quality > 100:
+                    logging.error("JPEG quality must be between 1 and 100")
+                    sys.exit(1)
+            except ValueError:
+                logging.error(f"Invalid JPEG quality value: {sys.argv[i + 1]}")
+                sys.exit(1)
+    
+    # Run the pixelized flattening
+    success = flatten_pdf(input_pdf, output_pdf, dpi=dpi, quality=quality, jpeg_quality=jpeg_quality)
+    
+    if not success:
+        sys.exit(1)

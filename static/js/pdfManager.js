@@ -13,6 +13,8 @@ $(document).ready(function() {
       $('#split-output-folder').val(defaultOutputFolder);
       $('#combine-output-folder').val(defaultOutputFolder);
       $('#flatten-output-folder').val(defaultOutputFolder);
+      $('#optimize-output-folder').val(defaultOutputFolder);
+      $('#extract-output-folder').val(defaultOutputFolder);
     })
     .fail(function() {
       console.warn('Could not load default output folder');
@@ -46,21 +48,30 @@ function closeModal(id) {
     $('#compress-input').val('');
     $('#compress-filename').val('').prop('disabled', true);
     $('#compress-output-folder').val(defaultOutputFolder);
-    $('#compress-flatten').prop('checked', false);
+    $('#compress-optimize').prop('checked', false);
   } else if (id === 'combine-modal') {
     // Clear inputs and reset flatten checkbox for combine modal
     $('#combine-input').val('');
     $('#combine-filename').val('').prop('disabled', true);
     $('#combine-output-folder').val(defaultOutputFolder);
-    $('#combine-flatten').prop('checked', false);
+    $('#combine-optimize').prop('checked', false);
   } else if (id === 'flatten-modal') {
-    // Clear inputs and reset checkboxes for flatten modal
+    // Clear inputs for flatten modal
     $('#flatten-input').val('');
     $('#flatten-filename').val('').prop('disabled', true);
     $('#flatten-output-folder').val(defaultOutputFolder);
-    $('#flatten-remove-links').prop('checked', false);
-    $('#flatten-keep-annotations').prop('checked', false);
-    $('#flatten-keep-transparency').prop('checked', false);
+  } else if (id === 'optimize-modal') {
+    // Clear inputs for optimize modal
+    $('#optimize-input').val('');
+    $('#optimize-filename').val('').prop('disabled', true);
+    $('#optimize-output-folder').val(defaultOutputFolder);
+    $('#optimize-aggressive').prop('checked', false);
+  } else if (id === 'extract-modal') {
+    // Clear inputs for extract modal
+    $('#extract-input').val('');
+    $('#extract-filename').val('').prop('disabled', true);
+    $('#extract-output-folder').val(defaultOutputFolder);
+    $('#extract-pages').val('');
   } else {
     // For other modals, clear all inputs as before
     $('#' + id + ' input').val('');
@@ -237,6 +248,34 @@ function validateFlattenInputs() {
     $('#flatten-run').prop('disabled', !canRun);
 }
 
+// Validate inputs for optimize PDF tool
+function validateOptimizeInputs() {
+    let file = $('#optimize-input')[0].files[0];
+    let fname = $('#optimize-filename').val();
+    let outputFolder = $('#optimize-output-folder').val();
+    
+    let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
+    let isValidFolder = outputFolder && outputFolder.trim().length > 0;
+    let canRun = file && isValidFilename && isValidFolder;
+    
+    $('#optimize-run').prop('disabled', !canRun);
+}
+
+// Validate inputs for extract pages tool
+function validateExtractInputs() {
+    let file = $('#extract-input')[0].files[0];
+    let fname = $('#extract-filename').val();
+    let outputFolder = $('#extract-output-folder').val();
+    let pages = $('#extract-pages').val();
+    
+    let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
+    let isValidFolder = outputFolder && outputFolder.trim().length > 0;
+    let isValidPages = pages && pages.trim().length > 0;
+    let canRun = file && isValidFilename && isValidFolder && isValidPages;
+    
+    $('#extract-run').prop('disabled', !canRun);
+}
+
 // Compress, split, and combine PDF functions
 export function compressSplitCombinePDFs(window, document) {
   // --- Modal open/close logic ---
@@ -265,17 +304,17 @@ export function compressSplitCombinePDFs(window, document) {
     let file = $('#compress-input')[0].files[0];
     let fname = $('#compress-filename').val();
     let outputFolder = $('#compress-output-folder').val();
-    let flatten = $('#compress-flatten').is(':checked');
+    let optimize = $('#compress-optimize').is(':checked');
     if (!file || !fname) return;
 
-    console.log('Compress run clicked:', {file: file.name, fname, outputFolder, flatten});
+    console.log('Compress run clicked:', {file: file.name, fname, outputFolder, optimize});
 
     showToolSpinner();
     let formData = new FormData();
     formData.append('input_pdf', file);
     formData.append('output_filename', fname);
     formData.append('output_folder', outputFolder);
-    formData.append('flatten', flatten ? 'true' : 'false');
+    formData.append('optimize', optimize ? 'true' : 'false');
     $.ajax({
       url: '/api/compress_pdf',
       type: 'POST',
@@ -348,13 +387,17 @@ export function compressSplitCombinePDFs(window, document) {
       let reader = new FileReader();
       reader.onload = function(ev) {
         if (window.pdfjsLib) {
-          window.pdfjsLib.getDocument({data: ev.target.result}).promise.then(function(pdf=state.pdfDoc) {
+          console.log('Loading PDF with PDF.js to get page count...');
+          window.pdfjsLib.getDocument({data: ev.target.result}).promise.then(function(pdf) {
             splitTotalPages = pdf.numPages;
+            console.log('PDF.js loaded successfully. Pages:', splitTotalPages);
+            
             if (method === 'pages') {
               let def = 10;
               if (splitTotalPages < 20) def = Math.max(1, Math.floor(splitTotalPages / 2));
               $('#split-max-pages').val(def);
             }
+            
             if (splitTotalPages === 1) {
               $('#split-warning').show().text('Warning: PDF has only 1 page. Cannot split.');
               $('#split-run').prop('disabled', true);
@@ -362,14 +405,16 @@ export function compressSplitCombinePDFs(window, document) {
               $('#split-warning').hide();
               validateSplitInputs(); // Re-validate after getting page count
             }
+          }).catch(function(error) {
+            console.error('PDF.js failed to load PDF:', error);
+            $('#split-warning').show().text('Error: Could not read PDF file. Please try a different file.');
+            splitTotalPages = 0;
+            validateSplitInputs();
           });
         } else {
-          // Fallback when PDF.js not available
-          splitTotalPages = 999; // Assume multi-page
-          if (method === 'pages') {
-            $('#split-max-pages').val(10);
-          }
-          $('#split-warning').hide();
+          console.error('PDF.js is not available! This should not happen.');
+          $('#split-warning').show().text('Error: PDF reader not available. Please refresh the page.');
+          splitTotalPages = 0;
           validateSplitInputs();
         }
       };
@@ -489,10 +534,10 @@ export function compressSplitCombinePDFs(window, document) {
     let files = $('#combine-input')[0].files;
     let fname = $('#combine-filename').val();
     let outputFolder = $('#combine-output-folder').val();
-    let flatten = $('#combine-flatten').is(':checked');
+    let optimize = $('#combine-optimize').is(':checked');
     if (!(files.length > 0 && fname)) return;
 
-    console.log('Combine run clicked:', {fileCount: files.length, fname, outputFolder, flatten});
+    console.log('Combine run clicked:', {fileCount: files.length, fname, outputFolder, optimize});
 
     showToolSpinner();
     let formData = new FormData();
@@ -501,7 +546,7 @@ export function compressSplitCombinePDFs(window, document) {
     }
     formData.append('output_filename', fname);
     formData.append('output_folder', outputFolder);
-    formData.append('flatten', flatten ? 'true' : 'false');
+    formData.append('optimize', optimize ? 'true' : 'false');
     $.ajax({
       url: '/api/combine_pdfs',
       type: 'POST',
@@ -545,21 +590,15 @@ export function compressSplitCombinePDFs(window, document) {
     let file = $('#flatten-input')[0].files[0];
     let fname = $('#flatten-filename').val();
     let outputFolder = $('#flatten-output-folder').val();
-    let removeLinks = $('#flatten-remove-links').is(':checked');
-    let keepAnnotations = $('#flatten-keep-annotations').is(':checked');
-    let keepTransparency = $('#flatten-keep-transparency').is(':checked');
     if (!file || !fname) return;
 
-    console.log('Flatten run clicked:', {file: file.name, fname, outputFolder, removeLinks, keepAnnotations, keepTransparency});
+    console.log('Flatten run clicked:', {file: file.name, fname, outputFolder});
 
     showToolSpinner();
     let formData = new FormData();
     formData.append('input_pdf', file);
     formData.append('output_filename', fname);
     formData.append('output_folder', outputFolder);
-    formData.append('remove_links', removeLinks ? 'true' : 'false');
-    formData.append('remove_annotations', keepAnnotations ? 'false' : 'true'); // Inverted logic
-    formData.append('flatten_transparency', keepTransparency ? 'false' : 'true'); // Inverted logic
     $.ajax({
       url: '/api/flatten_pdf',
       type: 'POST',
@@ -593,7 +632,7 @@ export function compressSplitCombinePDFs(window, document) {
   function selectFolder(inputId, validationFunction) {
     // Check if we're running in a webview (desktop app)
     if (window.pywebview && window.pywebview.api) {
-      // Use webview folder selection
+      // Use webview folder selection (desktop app)
       window.pywebview.api.select_folder().then(function(folderPath) {
         if (folderPath) {
           $(inputId).val(folderPath);
@@ -610,13 +649,36 @@ export function compressSplitCombinePDFs(window, document) {
         }
       });
     } else {
-      // Fallback for web browsers - just allow manual entry
-      let currentPath = $(inputId).val();
-      let newPath = prompt('Enter output folder path:', currentPath || defaultOutputFolder);
-      if (newPath && newPath.trim()) {
-        $(inputId).val(newPath.trim());
-        validationFunction();
-      }
+      // Use Flask API for native folder selection (web app)
+      $.ajax({
+        url: '/api/select_folder',
+        type: 'POST',
+        success: function(data) {
+          if (data.success && data.folder) {
+            $(inputId).val(data.folder);
+            validationFunction();
+          } else {
+            console.log('Folder selection failed:', data.error);
+            // Fallback to manual entry
+            let currentPath = $(inputId).val();
+            let newPath = prompt('Enter output folder path:', currentPath || defaultOutputFolder);
+            if (newPath && newPath.trim()) {
+              $(inputId).val(newPath.trim());
+              validationFunction();
+            }
+          }
+        },
+        error: function(xhr, status, error) {
+          console.log('Folder selection API error:', error);
+          // Fallback to manual entry
+          let currentPath = $(inputId).val();
+          let newPath = prompt('Enter output folder path:', currentPath || defaultOutputFolder);
+          if (newPath && newPath.trim()) {
+            $(inputId).val(newPath.trim());
+            validationFunction();
+          }
+        }
+      });
     }
   }
   
@@ -636,7 +698,129 @@ export function compressSplitCombinePDFs(window, document) {
     selectFolder('#flatten-output-folder', validateFlattenInputs);
   });
 
+  // --- Optimize PDF ---
+  $('#optimize-input').on('change', function() {
+    let file = this.files[0];
+    if (file) {
+      let baseName = file.name.replace(/\.[^/.]+$/, "");
+      $('#optimize-filename').val(baseName + '_optimized').prop('disabled', false);
+      $('#optimize-output-folder').val(defaultOutputFolder);
+      validateOptimizeInputs();
+    } else {
+      $('#optimize-filename').val('').prop('disabled', true);
+      $('#optimize-output-folder').val('');
+      validateOptimizeInputs();
+    }
+  });
+  $('#optimize-filename').on('input', validateOptimizeInputs);
+  $('#optimize-output-folder').on('input', validateOptimizeInputs);
+  $('#optimize-browse-folder').on('click', function() {
+    selectFolder('#optimize-output-folder', validateOptimizeInputs);
+  });
+  $('#optimize-run').on('click', function() {
+    let file = $('#optimize-input')[0].files[0];
+    let fname = $('#optimize-filename').val();
+    let outputFolder = $('#optimize-output-folder').val();
+    let aggressive = $('#optimize-aggressive').is(':checked');
+    if (!file || !fname) return;
+
+    console.log('Optimize run clicked:', {file: file.name, fname, outputFolder, aggressive});
+
+    showToolSpinner();
+    let formData = new FormData();
+    formData.append('input_pdf', file);
+    formData.append('output_filename', fname);
+    formData.append('output_folder', outputFolder);
+    formData.append('aggressive', aggressive);
+    $.ajax({
+      url: '/api/optimize_pdf',
+      type: 'POST',
+      data: formData,
+      processData: false,
+      contentType: false,
+      success: function(data) {
+        hideToolSpinner();
+        if (data.success && data.filename) {
+          closeModal('optimize-modal');
+          alert('PDF optimized successfully!\nSaved to: ' + data.filename);
+        } else if (!data.success && data.error) {
+          $('#optimize-message').text('Error: ' + data.error);
+        } else {
+          $('#optimize-message').text('An unknown error occurred.');
+        }
+      },
+      error: function(xhr) {
+        hideToolSpinner();
+        $('#optimize-message').text('Error: ' + xhr.responseText);
+      }
+    });
+  });
+
+  // --- Extract Pages ---
+  $('#extract-input').on('change', function() {
+    let file = this.files[0];
+    if (file) {
+      let baseName = file.name.replace(/\.[^/.]+$/, "");
+      $('#extract-filename').val(baseName + '_extracted').prop('disabled', false);
+      $('#extract-output-folder').val(defaultOutputFolder);
+      validateExtractInputs();
+    } else {
+      $('#extract-filename').val('').prop('disabled', true);
+      $('#extract-output-folder').val('');
+      $('#extract-pages').val('');
+      validateExtractInputs();
+    }
+  });
+  $('#extract-filename, #extract-pages').on('input', validateExtractInputs);
+  $('#extract-output-folder').on('input', validateExtractInputs);
+  $('#extract-browse-folder').on('click', function() {
+    selectFolder('#extract-output-folder', validateExtractInputs);
+  });
+  $('#extract-run').on('click', function() {
+    let file = $('#extract-input')[0].files[0];
+    let fname = $('#extract-filename').val();
+    let outputFolder = $('#extract-output-folder').val();
+    let pages = $('#extract-pages').val();
+    if (!file || !fname || !pages) return;
+
+    console.log('Extract run clicked:', {file: file.name, fname, outputFolder, pages});
+
+    showToolSpinner();
+    let formData = new FormData();
+    formData.append('input_pdf', file);
+    formData.append('output_filename', fname);
+    formData.append('output_folder', outputFolder);
+    formData.append('pages', pages);
+    $.ajax({
+      url: '/api/extract_pages',
+      type: 'POST',
+      data: formData,
+      processData: false,
+      contentType: false,
+      success: function(data) {
+        hideToolSpinner();
+        if (data.success && data.filename) {
+          closeModal('extract-modal');
+          alert('Pages extracted successfully!\nSaved to: ' + data.filename);
+        } else if (!data.success && data.error) {
+          $('#extract-message').text('Error: ' + data.error);
+        } else {
+          $('#extract-message').text('An unknown error occurred.');
+        }
+      },
+      error: function(xhr) {
+        hideToolSpinner();
+        $('#extract-message').text('Error: ' + xhr.responseText);
+      }
+    });
+  });
+
   // Expose openModal globally for navbar links
   window.openModal = openModal;
+}
+
+// Export the main initialization function that includes all PDF tools
+export function initializePDFTools(window, document) {
+  compressSplitCombinePDFs(window, document);
 }
 

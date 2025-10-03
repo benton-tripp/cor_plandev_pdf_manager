@@ -1,4 +1,4 @@
-import {compressSplitCombinePDFs} from './pdfManager.js';
+import {initializePDFTools} from './pdfManager.js';
 
 // Main initialization
 $(document).ready(function () {
@@ -14,8 +14,8 @@ $(document).ready(function () {
         }
     });
     
-    // Initialize PDF tools
-    compressSplitCombinePDFs(window, document);
+    // Initialize all PDF tools (compress, split, combine, optimize, extract)
+    initializePDFTools(window, document);
     
     // Show body once CSS is loaded
     $('body').addClass('css-loaded');

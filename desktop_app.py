@@ -5,9 +5,8 @@ import sys
 import os
 import socket
 from contextlib import closing
-from tkinter import filedialog
-import tkinter as tk
 from app import app
+from utils.manage_output_dir import FolderSelector
 
 def get_resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
@@ -29,27 +28,12 @@ def find_free_port():
 class Api:
     """API class for webview to interact with Python"""
     
+    def __init__(self):
+        self.folder_selector = FolderSelector()
+    
     def select_folder(self):
-        """Open folder selection dialog"""
-        try:
-            # Create a root window and hide it
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes('-topmost', True)
-            
-            # Open folder dialog
-            folder_path = filedialog.askdirectory(
-                title="Select Output Folder",
-                initialdir=os.path.expanduser("~/Documents")
-            )
-            
-            # Clean up
-            root.destroy()
-            
-            return folder_path if folder_path else None
-        except Exception as e:
-            print(f"Error selecting folder: {e}")
-            return None
+        """Open folder selection dialog using shared module"""
+        return self.folder_selector.select_folder()
 
 def start_flask(port):
     """Start Flask in a separate thread"""

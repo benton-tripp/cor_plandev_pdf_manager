@@ -29,11 +29,11 @@ html {
 
 @media (min-width: 769px) {
     html {
-        min-width: 1200px;
+        min-width: 900px;
     }
     
     body {
-        min-width: 1200px;
+        min-width: 900px;
     }
 }
 
@@ -43,7 +43,7 @@ body {
     font-family: Arial, sans-serif;
     background-color: #fff;
     color: #111;
-    min-width: 320px;
+    min-width: 390px;
     overflow-x: auto;
     overflow-y: auto;
     min-height: 100vh;
@@ -60,6 +60,7 @@ body {
     margin-top: 72px;
     margin-bottom: 60px;
     box-sizing: border-box;
+    min-width: 380px;
 }
 
 a {
@@ -92,7 +93,7 @@ a::after {
     left: 0;
     text-wrap: nowrap;
     width: 100%;
-    min-width: 340px;
+    min-width: 390px;
     border-bottom: 1px solid #111;
     height: 72px;
     z-index: 999; 
@@ -147,6 +148,7 @@ a::after {
     gap: 10px;
     text-decoration: none;
     color: #fff;
+    font-size: 1em;
 }
 
 #navbar-title:hover {
@@ -170,7 +172,7 @@ footer {
     color: #fff; 
     text-align: center; 
     height: 60px;
-    min-width: 340px;
+    min-width: 390px;
     width: 100%;
     border-top: 1px solid #111;
     position: fixed;
@@ -219,16 +221,18 @@ footer {
     align-items: center;
     justify-content: flex-start;
     width: 100%;
-    padding: 40px 20px;
+    padding: 0 15px 40px 15px;
+    box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 .pdf-tools-header {
     text-align: center;
-    margin-bottom: 40px;
+    margin-bottom: 10px;
 }
 
 .pdf-tools-header h1 {
-    font-size: 2.5em;
+    font-size: 2.25em;
     color: #046A38;
     margin: 0 0 10px 0;
     font-weight: 300;
@@ -242,17 +246,17 @@ footer {
 
 .pdf-tools-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 30px;
-    max-width: 1200px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 380px));
+    gap: 25px;
+    max-width: min(1200px, 100vw - 30px);
     width: 100%;
+    justify-content: center;
 }
 
-/* Medium screens - 2x2 grid */
-@media (max-width: 1100px) {
+/* Adjust gap for smaller screens */
+@media (max-width: 700px) {
     .pdf-tools-grid {
-        grid-template-columns: repeat(2, 1fr);
-        max-width: 700px;
+        gap: 20px;
     }
 }
 
@@ -532,13 +536,13 @@ footer {
 }
 
 /* Responsive styles */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     html {
-        min-width: 320px;
+        min-width: 390px;
     }
     
     body {
-        min-width: 320px;
+        min-width: 390px;
     }
     
     .container {
@@ -576,11 +580,11 @@ footer {
     .pdf-tools-grid {
         grid-template-columns: 1fr;
         gap: 20px;
-        max-width: 400px;
+        max-width: calc(100% - 20px);
     }
     
     .pdf-tools-header h1 {
-        font-size: 2em;
+        font-size: 1.75em;
     }
     
     .pdf-tool-card {
@@ -608,5 +612,11 @@ footer {
     .tool-modal-label {
         min-width: auto;
         margin-bottom: 5px;
+    }
+
+    #navbar-title {
+        margin: 5px 2.5px;
+        gap: 5px;
+        font-size: 0.7em;
     }
 }

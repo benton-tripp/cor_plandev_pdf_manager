@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+"""
+Compress a PDF file to reduce its size
+"""
+
 import fitz # PyMuPDF
 import sys
 import os
