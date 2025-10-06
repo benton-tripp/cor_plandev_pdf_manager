@@ -17,6 +17,9 @@ function validateCombineInputs() {
 
 // Initialize combine PDF functionality
 export function initializeCombine() {
+  // Store validation function globally for browser tracking
+  window.validateCombineInputs = validateCombineInputs;
+  
   $('#combine-input').on('change', function() {
     let files = this.files;
     if (files.length > 0) {

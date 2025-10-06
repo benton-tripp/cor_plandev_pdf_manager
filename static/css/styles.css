@@ -422,6 +422,11 @@ footer {
     cursor: not-allowed;
 }
 
+.tool-modal-run:disabled:hover {
+    background: #ccc !important;
+    cursor: not-allowed;
+}
+
 .tool-modal-cancel {
     background: #666;
     color: #fff;
@@ -432,8 +437,18 @@ footer {
     font-size: 1em;
 }
 
-.tool-modal-cancel:hover {
+.tool-modal-cancel:hover:not(:disabled) {
     background: #555;
+}
+
+.tool-modal-cancel:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.tool-modal-cancel:disabled:hover {
+    background: #ccc !important;
+    cursor: not-allowed;
 }
 
 .tool-modal-message {

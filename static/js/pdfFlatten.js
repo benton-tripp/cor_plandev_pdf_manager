@@ -143,6 +143,9 @@ function initializeFlattenCancel() {
 
 // Initialize flatten PDF functionality
 export function initializeFlatten() {
+  // Store validation function globally for browser tracking
+  window.validateFlattenInputs = validateFlattenInputs;
+  
   $('#flatten-input').on('change', function() {
     let file = this.files[0];
     if (file) {

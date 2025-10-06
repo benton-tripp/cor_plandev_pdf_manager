@@ -13,3 +13,4 @@
         - JS
         - Python Modules
         - app.py
+- Don't allow a process to start while an input file or output directory file explorer is open

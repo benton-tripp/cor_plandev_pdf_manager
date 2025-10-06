@@ -143,6 +143,9 @@ export function initializeCompress() {
   // Reset compress state on initialization
   resetCompressState();
   
+  // Store validation function globally for browser tracking
+  window.validateCompressInputs = validateCompressInputs;
+  
   $('#compress-input').on('change', function() {
     let file = this.files[0];
     if (file) {

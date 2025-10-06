@@ -223,6 +223,9 @@ function validateExtractInputs() {
 
 // Initialize extract PDF functionality
 export function initializeExtract() {
+  // Store validation function globally for browser tracking
+  window.validateExtractInputs = validateExtractInputs;
+  
   $('#extract-input').on('change', function() {
     let file = this.files[0];
     if (file) {

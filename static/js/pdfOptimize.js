@@ -132,6 +132,9 @@ function initializeOptimizeCancel() {
 
 // Initialize optimize PDF functionality
 export function initializeOptimize() {
+  // Store validation function globally for browser tracking
+  window.validateOptimizeInputs = validateOptimizeInputs;
+  
   $('#optimize-input').on('change', function() {
     let file = this.files[0];
     if (file) {

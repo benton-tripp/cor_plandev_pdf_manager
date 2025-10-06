@@ -1,5 +1,8 @@
 // utils.js - Shared utility functions
 
+// Track which browsers are currently open
+let activeBrowsers = new Set();
+
 // Show spinner overlay
 export function showToolSpinner() {
   if ($('#tool-spinner-overlay').length) return;
@@ -26,18 +29,61 @@ export function validateFolder(folderPath) {
   return folderPath && folderPath.trim().length > 0;
 }
 
+// Disable Run and Cancel buttons for a modal during browser operation
+function disableModalButtons(modalPrefix) {
+  console.log(`Disabling buttons for ${modalPrefix} - browser is open`);
+  $(`#${modalPrefix}-run`).prop('disabled', true);
+  $(`#${modalPrefix}-cancel`).prop('disabled', true);
+}
+
+// Re-enable Run and Cancel buttons for a modal after browser operation
+function enableModalButtons(modalPrefix, validationFunction) {
+  console.log(`Re-enabling buttons for ${modalPrefix} - browser closed`);
+  $(`#${modalPrefix}-cancel`).prop('disabled', false);
+  // Re-run validation to determine if Run button should be enabled
+  if (validationFunction) {
+    validationFunction();
+  }
+}
+
+// Mark a browser as active and disable relevant buttons
+function setBrowserActive(modalPrefix) {
+  activeBrowsers.add(modalPrefix);
+  disableModalButtons(modalPrefix);
+}
+
+// Mark a browser as inactive and re-enable relevant buttons
+function setBrowserInactive(modalPrefix, validationFunction) {
+  activeBrowsers.delete(modalPrefix);
+  enableModalButtons(modalPrefix, validationFunction);
+}
+
 // Folder browsing functionality for desktop app
-export function selectFolder(inputId, validationFunction) {
+export function selectFolder(inputId, validationFunction, modalPrefix) {
+  // Determine modal prefix from inputId if not provided
+  if (!modalPrefix) {
+    modalPrefix = inputId.replace('#', '').replace('-output-folder', '');
+  }
+  
+  // Mark browser as active and disable buttons
+  setBrowserActive(modalPrefix);
+  
   // Check if we're running in a webview (desktop app)
   if (window.pywebview && window.pywebview.api) {
     // Use webview folder selection (desktop app)
     window.pywebview.api.select_folder().then(function(folderPath) {
       if (folderPath) {
         $(inputId).val(folderPath);
-        validationFunction();
+        if (validationFunction) {
+          validationFunction();
+        }
       }
+      // Re-enable buttons when browser closes
+      setBrowserInactive(modalPrefix, validationFunction);
     }).catch(function(error) {
       console.log('Folder selection error:', error);
+      // Re-enable buttons even on error
+      setBrowserInactive(modalPrefix, validationFunction);
     });
   } else {
     // Use Flask API for native folder selection (web app)
@@ -47,14 +93,48 @@ export function selectFolder(inputId, validationFunction) {
       success: function(data) {
         if (data.success && data.folder) {
           $(inputId).val(data.folder);
-          validationFunction();
+          if (validationFunction) {
+            validationFunction();
+          }
         } else {
           console.log('Folder selection failed:', data.error);
         }
+        // Re-enable buttons when browser closes
+        setBrowserInactive(modalPrefix, validationFunction);
       },
       error: function(xhr, status, error) {
         console.log('Folder selection error:', error);
+        // Re-enable buttons even on error
+        setBrowserInactive(modalPrefix, validationFunction);
       }
     });
   }
+}
+
+// Track file input browser state for file selection dialogs
+export function setupFileInputBrowserTracking(inputId, modalPrefix, validationFunction) {
+  // Listen for when file input is clicked (browser about to open)
+  $(inputId).on('mousedown', function() {
+    setBrowserActive(modalPrefix);
+  });
+  
+  // Listen for when file selection completes or is cancelled
+  $(inputId).on('change', function() {
+    // Small delay to ensure the browser dialog has closed
+    setTimeout(() => {
+      setBrowserInactive(modalPrefix, validationFunction);
+    }, 100);
+  });
+  
+  // Handle the case where user cancels file selection (focus returns without change)
+  $(inputId).on('focus', function() {
+    // If browser was active but no change event occurred, re-enable buttons
+    if (activeBrowsers.has(modalPrefix)) {
+      setTimeout(() => {
+        if (activeBrowsers.has(modalPrefix)) {
+          setBrowserInactive(modalPrefix, validationFunction);
+        }
+      }, 200);
+    }
+  });
 }

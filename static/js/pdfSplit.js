@@ -205,6 +205,9 @@ function initializeSplitCancel() {
 
 // Initialize split PDF functionality
 export function initializeSplit() {
+  // Store validation function globally for browser tracking
+  window.validateSplitInputs = validateSplitInputs;
+  
   // Split method radio button handling
   $('input[name="split-method"]').on('change', function() {
     let method = $(this).val();
