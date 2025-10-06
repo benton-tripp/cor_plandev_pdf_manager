@@ -9,7 +9,7 @@ import argparse
 import os
 import sys
 
-def extract_pages(input_pdf, output_pdf, page_numbers):
+def extract_pages(input_pdf, output_pdf, page_numbers, cancellation_checker=None):
     """
     Extract specific pages from a PDF file
     
@@ -17,9 +17,10 @@ def extract_pages(input_pdf, output_pdf, page_numbers):
         input_pdf (str): Path to input PDF file
         output_pdf (str): Path to output PDF file
         page_numbers (list): List of page numbers to extract (1-indexed)
+        cancellation_checker (callable): Optional function that returns True if operation should be cancelled
     
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful, False if cancelled or failed
     """
     try:
         # Open the input PDF
@@ -43,9 +44,29 @@ def extract_pages(input_pdf, output_pdf, page_numbers):
         # Create new document with selected pages
         new_doc = fitz.open()
         
-        for page_idx in valid_pages:
+        for i, page_idx in enumerate(valid_pages):
+            # Check for cancellation before each page
+            if cancellation_checker and cancellation_checker():
+                print(f"Extract cancelled after {i} pages")
+                new_doc.close()
+                doc.close()
+                # Clean up partial output file if it exists
+                if os.path.exists(output_pdf):
+                    try:
+                        os.unlink(output_pdf)
+                    except:
+                        pass
+                return False
+            
             print(f"Extracting page {page_idx + 1}")
             new_doc.insert_pdf(doc, from_page=page_idx, to_page=page_idx)
+        
+        # Check for cancellation one more time before saving
+        if cancellation_checker and cancellation_checker():
+            print("Extract cancelled before saving")
+            new_doc.close()
+            doc.close()
+            return False
         
         # Save the new document
         new_doc.save(output_pdf)

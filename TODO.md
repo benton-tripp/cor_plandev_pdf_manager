@@ -1,9 +1,10 @@
 - Cancel buttons for running processes
     - √ Split 
-    - Optimize
+    - √ Optimize
     - Combine
     - √ Flatten
-    - Extract pages
+    - √ Extract pages
+    - √ Compress
 - Help page
 - Test "Optimize PDF" more to ensure it is actually optimizing (current approach is very conservative)
 - Detailed comments & documentation

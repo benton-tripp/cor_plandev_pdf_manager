@@ -2,12 +2,15 @@
 import os
 import threading
 import shutil
-import tempfile
 import zipfile
 import logging
+import time
 from werkzeug.utils import secure_filename
 from manage_pdfs.flatten import flatten_pdf
 from manage_pdfs.split import split_pdf_with_progress as split_func
+from manage_pdfs.extract_pages import extract_pages
+from manage_pdfs.optimize import optimize_pdf
+from manage_pdfs.compress import compress_pdf
 
 
 def flatten_pdf_with_progress(job_id, input_path, output_path, flatten_progress):
@@ -235,4 +238,284 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
             'status': 'error',
             'message': f'Error: {str(e)}',
             'percentage': 0
+        }
+
+
+def extract_pages_with_progress(job_id, input_path, output_path, page_numbers, extract_progress):
+    """Run PDF page extraction with progress tracking"""
+    try:
+        # Check if job was already cancelled before we even started
+        if extract_progress[job_id].get('cancelled', False):
+            logging.info(f"Extract job {job_id} was cancelled before background thread started")
+            extract_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'Page extraction was cancelled'
+            })
+            return
+        
+        # Add a small delay to allow frontend cancellation during startup
+        time.sleep(0.1)  # 100ms delay
+        
+        # Check again after delay - this catches cancellations during startup
+        if extract_progress[job_id].get('cancelled', False):
+            logging.info(f"Extract job {job_id} was cancelled during startup delay")
+            extract_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'Page extraction was cancelled'
+            })
+            return
+        
+        # Update to processing status
+        extract_progress[job_id].update({
+            'status': 'processing',
+            'message': 'Extracting pages from PDF...'
+        })
+        
+        # Final check for cancellation before starting actual work
+        if extract_progress[job_id].get('cancelled', False):
+            logging.info(f"Extract job {job_id} cancelled before starting extraction")
+            extract_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'Page extraction was cancelled'
+            })
+            return
+        
+        # Create a cancellation checker function
+        def cancellation_checker():
+            return extract_progress[job_id].get('cancelled', False)
+        
+        # Call extract_pages function with cancellation checker
+        result = extract_pages(input_path, output_path, page_numbers, cancellation_checker=cancellation_checker)
+        
+        # Check if operation was cancelled during processing
+        if extract_progress[job_id].get('cancelled', False):
+            logging.info(f"Extract job {job_id} was cancelled")
+            extract_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'Page extraction was cancelled'
+            })
+        elif result:
+            # Mark as complete
+            extract_progress[job_id] = {
+                'status': 'complete',
+                'message': 'Page extraction completed successfully!',
+                'filename': output_path
+            }
+        else:
+            extract_progress[job_id] = {
+                'status': 'error',
+                'message': 'Page extraction failed'
+            }
+    except Exception as e:
+        extract_progress[job_id] = {
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }
+
+
+def optimize_pdf_with_progress(job_id, input_path, output_path, aggressive, optimize_progress):
+    """Run PDF optimization with progress tracking"""
+    try:
+        # Check if job was already cancelled before we even started
+        if optimize_progress[job_id].get('cancelled', False):
+            logging.info(f"Optimize job {job_id} was cancelled before background thread started")
+            optimize_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF optimization was cancelled'
+            })
+            return
+        
+        # Add a small delay to allow frontend cancellation during startup
+        time.sleep(0.1)  # 100ms delay
+        
+        # Check again after delay - this catches cancellations during startup
+        if optimize_progress[job_id].get('cancelled', False):
+            logging.info(f"Optimize job {job_id} was cancelled during startup delay")
+            optimize_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF optimization was cancelled'
+            })
+            return
+        
+        # Update to processing status
+        optimize_progress[job_id].update({
+            'status': 'processing',
+            'message': 'Optimizing PDF file...'
+        })
+        
+        # Final check for cancellation before starting actual work
+        if optimize_progress[job_id].get('cancelled', False):
+            logging.info(f"Optimize job {job_id} cancelled before starting optimization")
+            optimize_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF optimization was cancelled'
+            })
+            return
+        
+        # Call optimize_pdf function (no cancellation checker support in current implementation)
+        result = optimize_pdf(input_path, output_path, aggressive)
+        
+        # Check if operation was cancelled during processing
+        if optimize_progress[job_id].get('cancelled', False):
+            logging.info(f"Optimize job {job_id} was cancelled")
+            optimize_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF optimization was cancelled'
+            })
+        elif result:
+            # Mark as complete
+            optimize_progress[job_id] = {
+                'status': 'complete',
+                'message': 'PDF optimization completed successfully!',
+                'filename': output_path
+            }
+        else:
+            optimize_progress[job_id] = {
+                'status': 'error',
+                'message': 'PDF optimization failed'
+            }
+    except Exception as e:
+        optimize_progress[job_id] = {
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }
+
+
+def compress_pdf_with_progress(job_id, input_path, output_path, should_optimize, compress_progress):
+    """Run PDF compression with progress tracking"""
+    try:
+        # Check if job was already cancelled before we even started
+        if compress_progress[job_id].get('cancelled', False):
+            logging.info(f"Compress job {job_id} was cancelled before background thread started")
+            compress_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF compression was cancelled'
+            })
+            return
+        
+        # Add a small delay to allow frontend cancellation during startup
+        time.sleep(0.1)  # 100ms delay
+        
+        # Check again after delay - this catches cancellations during startup
+        if compress_progress[job_id].get('cancelled', False):
+            logging.info(f"Compress job {job_id} was cancelled during startup delay")
+            compress_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF compression was cancelled'
+            })
+            return
+        
+        # Update to processing status
+        compress_progress[job_id].update({
+            'status': 'processing',
+            'message': 'Preparing PDF for compression...'
+        })
+        
+        # Final check for cancellation before starting actual work
+        if compress_progress[job_id].get('cancelled', False):
+            logging.info(f"Compress job {job_id} cancelled before starting compression")
+            compress_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF compression was cancelled'
+            })
+            return
+        
+        # Handle optimization if requested
+        temp_optimized_path = None
+        if should_optimize:
+            # Update status for optimization phase
+            compress_progress[job_id].update({
+                'status': 'processing',
+                'message': 'Optimizing PDF before compression...'
+            })
+            
+            # Log optimization start
+            logging.info(f"Starting optimization for job {job_id}")
+            
+            # Check for cancellation before optimization
+            if compress_progress[job_id].get('cancelled', False):
+                logging.info(f"Compress job {job_id} cancelled before optimization")
+                compress_progress[job_id].update({
+                    'status': 'cancelled',
+                    'message': 'PDF compression was cancelled'
+                })
+                return
+            
+            # Create temporary optimized file
+            temp_optimized_path = input_path.replace('.pdf', '_temp_optimized.pdf')
+            optimize_result = optimize_pdf(input_path, temp_optimized_path, aggressive=False)
+            
+            logging.info(f"Optimization completed for job {job_id}, result: {optimize_result}")
+            
+            if not optimize_result:
+                compress_progress[job_id] = {
+                    'status': 'error',
+                    'message': 'Optimization step failed'
+                }
+                return
+            
+            compress_input_path = temp_optimized_path
+        else:
+            compress_input_path = input_path
+        
+        # Update status for compression phase
+        compress_progress[job_id].update({
+            'status': 'processing',
+            'message': 'Compressing PDF file...'
+        })
+        
+        # Add a small delay to ensure the UI sees the compression message
+        time.sleep(0.5)  # 500ms delay to ensure UI polling catches the message update
+        
+        # Log the compression start for debugging
+        logging.info(f"Starting compression for job {job_id}: {compress_input_path} -> {output_path}")
+
+        # Final check for cancellation before compression
+        if compress_progress[job_id].get('cancelled', False):
+            logging.info(f"Compress job {job_id} cancelled before compression")
+            # Clean up temp optimized file if it exists
+            if should_optimize and temp_optimized_path and os.path.exists(temp_optimized_path):
+                os.unlink(temp_optimized_path)
+            compress_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF compression was cancelled'
+            })
+            return
+        
+        # Call compress_pdf function (no cancellation checker support in current implementation)
+        result = compress_pdf(compress_input_path, output_path)
+        
+        # Log compression completion
+        logging.info(f"Compression completed for job {job_id}, result: {result}")
+        
+        # Clean up temporary optimized file if it was created
+        if should_optimize and temp_optimized_path and os.path.exists(temp_optimized_path):
+            try:
+                os.unlink(temp_optimized_path)
+            except Exception as e:
+                logging.warning(f"Failed to cleanup temp file {temp_optimized_path}: {e}")
+        
+        # Check if operation was cancelled during processing
+        if compress_progress[job_id].get('cancelled', False):
+            logging.info(f"Compress job {job_id} was cancelled")
+            compress_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF compression was cancelled'
+            })
+        elif result:
+            # Mark as complete
+            compress_progress[job_id] = {
+                'status': 'complete',
+                'message': 'PDF compression completed successfully!',
+                'filename': output_path
+            }
+        else:
+            compress_progress[job_id] = {
+                'status': 'error',
+                'message': 'PDF compression failed'
+            }
+    except Exception as e:
+        compress_progress[job_id] = {
+            'status': 'error',
+            'message': f'Error: {str(e)}'
         }

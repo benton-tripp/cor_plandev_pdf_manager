@@ -6,7 +6,13 @@ export const state = {
     defaultOutputFolder: '',
     splitTotalPages: 0,
     currentSplitJobId: null,
-    currentFlattenJobId: null
+    currentFlattenJobId: null,
+    currentExtractJobId: null,
+    currentExtractRequest: null,
+    currentOptimizeJobId: null,
+    currentOptimizeRequest: null,
+    currentCompressJobId: null,
+    currentCompressRequest: null
 };
 
 // General setter for state properties

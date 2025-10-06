@@ -1,9 +1,124 @@
 // pdfExtract.js - PDF page extraction functionality
 import { state, setState, closeModal } from './state.js';
-import { showToolSpinner, hideToolSpinner, validateFilename, validateFolder } from './utils.js';
+import { openModal, validateFilename, validateFolder } from './utils.js';
 
 // Track total pages for extract validation
 let extractTotalPages = 0;
+
+// Track extract progress
+function trackExtractProgress(jobId) {
+  setState('currentExtractJobId', jobId); // Store job ID for cancellation
+  
+  const poll = () => {
+    $.ajax({
+      url: `/api/extract_progress/${jobId}`,
+      type: 'GET',
+      success: function(data) {
+        console.log('Extract progress data received:', data);
+
+        if (data.error) {
+          closeModal('extract-progress-modal');
+          alert('Error: ' + data.error);
+          return;
+        }
+        
+        // Update the UI with latest data
+        updateExtractProgress(data.message || 'Processing...');
+        
+        if (data.status === 'complete') {
+          // User shouldn't be able to press cancel here
+          $('#extract-cancel-btn').prop('disabled', true).text('Cancel');
+          setState('currentExtractJobId', null);
+          setState('currentExtractRequest', null);
+          setTimeout(() => {
+            closeModal('extract-progress-modal');
+            if (data.filename) {
+              alert('Pages extracted successfully!\nSaved to: ' + data.filename);
+            }
+          }, 1000); // Show completion message for a moment
+          // Re-enable cancel button and clear job ID and request
+          $('#extract-cancel-btn').prop('disabled', false).text('Cancel');
+        } else if (data.status === 'cancelled') {
+          // Re-enable cancel button and clear job ID and request
+          $('#extract-cancel-btn').prop('disabled', false).text('Cancel');
+          setState('currentExtractJobId', null);
+          setState('currentExtractRequest', null);
+          closeModal('extract-progress-modal');
+          alert('Page extraction was cancelled.');
+        } else if (data.status === 'error') {
+          // Re-enable cancel button and clear job ID and request
+          $('#extract-cancel-btn').prop('disabled', false).text('Cancel');
+          setState('currentExtractJobId', null);
+          setState('currentExtractRequest', null);
+          closeModal('extract-progress-modal');
+          alert('Error: ' + (data.message || 'Extract failed'));
+        } else {
+          // Continue polling
+          setTimeout(poll, 500); // Poll every 500ms
+        }
+      },
+      error: function(xhr, status, error) {
+        console.log('Extract progress polling error:', xhr.responseText, status, error);
+        // Re-enable cancel button and clear job ID and request on error
+        $('#extract-cancel-btn').prop('disabled', false).text('Cancel');
+        setState('currentExtractJobId', null);
+        setState('currentExtractRequest', null);
+        closeModal('extract-progress-modal');
+        alert('Error: Lost connection to server');
+      }
+    });
+  };
+  
+  poll();
+}
+
+// Update extract progress display
+function updateExtractProgress(message) {
+  console.log('Updating extract progress:', {message});
+  $('#extract-progress-status').text(message || 'Processing...');
+}
+
+// Initialize extract cancel button handler
+function initializeExtractCancel() {
+  $('#extract-cancel-btn').on('click', function() {
+    if (state.currentExtractJobId) {
+      // Disable button immediately to prevent multiple clicks
+      $(this).prop('disabled', true).text('Cancelling...');
+      
+      // Show immediate feedback to user
+      $('#extract-progress-status').text('Cancellation requested...');
+      
+      // If job is still pending (during startup), abort request and close modal immediately
+      if (state.currentExtractJobId === 'pending') {
+        // Abort the ongoing request if it exists
+        if (state.currentExtractRequest) {
+          state.currentExtractRequest.abort();
+          setState('currentExtractRequest', null);
+        }
+        closeModal('extract-progress-modal');
+        setState('currentExtractJobId', null);
+        return;
+      }
+      
+      $.ajax({
+        url: `/api/cancel_extract/${state.currentExtractJobId}`,
+        type: 'POST',
+        success: function(data) {
+          console.log('Extract cancel request sent:', data);
+          // Show faster feedback
+          $('#extract-progress-status').text('Cancelling operation, please wait...');
+          // Progress polling will handle the actual cleanup and modal closing
+        },
+        error: function(xhr, status, error) {
+          console.log('Extract cancel request error:', error);
+          // Re-enable button if cancel request failed
+          $('#extract-cancel-btn').prop('disabled', false).text('Cancel');
+          $('#extract-progress-status').text('Cancel request failed');
+        }
+      });
+    }
+  });
+}
 
 // Parse page numbers from a string format
 function parsePageNumbers(pageString) {
@@ -186,33 +301,96 @@ export function initializeExtract() {
 
     console.log('Extract run clicked:', {file: file.name, fname, outputFolder, pages, validPages: parseResult.pages});
 
-    showToolSpinner();
+    // Close the extract modal and show progress modal
+    closeModal('extract-modal');
+    openModal('extract-progress-modal');
+    
+    // Reset progress display and ensure cancel button is enabled
+    $('#extract-progress-status').text('Starting page extraction...');
+    $('#extract-cancel-btn').prop('disabled', false).text('Cancel');
+    
+    // Set a temporary job ID so cancel button works during startup
+    setState('currentExtractJobId', 'pending');
+
     let formData = new FormData();
     formData.append('input_pdf', file);
     formData.append('output_filename', fname);
     formData.append('output_folder', outputFolder);
     formData.append('pages', pages);
-    $.ajax({
+    
+    let extractRequest = $.ajax({
       url: '/api/extract_pages',
       type: 'POST',
       data: formData,
       processData: false,
       contentType: false,
       success: function(data) {
-        hideToolSpinner();
-        if (data.success && data.filename) {
-          closeModal('extract-modal');
-          alert('Pages extracted successfully!\nSaved to: ' + data.filename);
-        } else if (!data.success && data.error) {
-          $('#extract-message').text('Error: ' + data.error);
+        // Check if we were cancelled during startup
+        if (state.currentExtractJobId === null) {
+          console.log('Extract was cancelled during startup, ignoring response');
+          // If we got a job ID back but were cancelled, cancel it immediately
+          if (data.success && data.job_id) {
+            $.ajax({
+              url: `/api/cancel_extract/${data.job_id}`,
+              type: 'POST',
+              success: function() {
+                console.log('Cancelled extract job that started after user cancellation');
+              }
+            });
+          }
+          return;
+        }
+        
+        if (data.success && data.job_id) {
+          // Update with real job ID and start tracking progress
+          setState('currentExtractJobId', data.job_id);
+          trackExtractProgress(data.job_id);
         } else {
-          $('#extract-message').text('An unknown error occurred.');
+          setState('currentExtractJobId', null);
+          setState('currentExtractRequest', null);
+          closeModal('extract-progress-modal');
+          alert('Error starting extraction: ' + (data.error || 'Unknown error'));
         }
       },
-      error: function(xhr) {
-        hideToolSpinner();
-        $('#extract-message').text('Error: ' + xhr.responseText);
+      error: function(xhr, status, error) {
+        console.log('Extract request error:', {status, error, xhr_status: xhr.status, currentJobId: state.currentExtractJobId});
+        
+        // Only show error if we weren't cancelled during startup
+        if (state.currentExtractJobId !== null) {
+          setState('currentExtractJobId', null);
+          setState('currentExtractRequest', null);
+          closeModal('extract-progress-modal');
+          
+          // Check if this was an aborted request (user cancelled)
+          if (status === 'abort' || xhr.status === 0) {
+            // Request was aborted - don't show error message
+            console.log('Extract request was aborted by user cancellation');
+          } else {
+            // Actual error occurred - try to parse the response
+            let errorMessage = 'Unknown error occurred';
+            try {
+              if (xhr.responseText) {
+                const response = JSON.parse(xhr.responseText);
+                errorMessage = response.error || xhr.responseText;
+              } else if (error) {
+                errorMessage = error;
+              }
+            } catch (e) {
+              errorMessage = xhr.responseText || error || 'Unknown error occurred';
+            }
+            alert('Error starting extraction: ' + errorMessage);
+          }
+        } else {
+          // Request was cancelled during startup - just log it
+          console.log('Extract request completed after user cancellation - ignoring error');
+        }
       }
     });
+    
+    // Store the request so we can abort it if needed
+    setState('currentExtractRequest', extractRequest);
   });
+
+  // Initialize cancel button functionality
+  initializeExtractCancel();
 }

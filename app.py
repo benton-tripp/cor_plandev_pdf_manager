@@ -19,7 +19,8 @@ from manage_pdfs.optimize import optimize_pdf
 from manage_pdfs.extract_pages import extract_pages
 from utils.manage_temp import cleanup_temp_folder
 from utils.manage_output_dir import get_default_output_folder, FolderSelector
-from utils.process_with_progress import flatten_pdf_with_progress, split_pdf_with_progress
+from utils.process_with_progress import flatten_pdf_with_progress, split_pdf_with_progress, extract_pages_with_progress, optimize_pdf_with_progress, compress_pdf_with_progress
+from utils.filename_utils import make_unique_filename, make_unique_zip_filename
 
 DEBUG = True
 
@@ -58,6 +59,15 @@ split_progress = {}
 
 # Flatten progress tracking
 flatten_progress = {}
+
+# Extract progress tracking  
+extract_progress = {}
+
+# Optimize progress tracking
+optimize_progress = {}
+
+# Compress progress tracking
+compress_progress = {}
 
 ### Page Routes ####
 
@@ -120,6 +130,7 @@ def api_compress_pdf():
         
         if not input_pdf or not output_filename:
             return jsonify({'success': False, 'error': 'Missing required fields.'}), 400
+        
         # Ensure .pdf extension
         if not output_filename.lower().endswith('.pdf'):
             output_filename += '.pdf'
@@ -129,29 +140,30 @@ def api_compress_pdf():
             
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
         input_pdf.save(input_path)
-        
-        # If optimization is requested, optimize first then compress
-        if should_optimize:
-            temp_optimized_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_optimized_{secure_filename(input_pdf.filename)}")
-            optimize_result = optimize_pdf(input_path, temp_optimized_path, aggressive=False)
-            if not optimize_result:
-                return jsonify({'success': False, 'error': 'Optimization failed.'})
-            # Use optimized file as input for compression
-            compress_input_path = temp_optimized_path
-        else:
-            compress_input_path = input_path
-        
         output_path = os.path.join(output_folder, secure_filename(output_filename))
-        result = compress_pdf(compress_input_path, output_path)
+        # Make filename unique if it already exists
+        output_path = make_unique_filename(output_path)
         
-        # Clean up temporary optimized file if it was created
-        if should_optimize and os.path.exists(temp_optimized_path):
-            os.unlink(temp_optimized_path)
+        # Generate job ID for progress tracking
+        job_id = str(uuid.uuid4())
         
-        if result:
-            return jsonify({'success': True, 'filename': output_path, 'error': None})
-        else:
-            return jsonify({'success': False, 'error': 'Compression failed.'})
+        # Initialize the progress entry before starting thread
+        compress_progress[job_id] = {
+            'status': 'starting',
+            'message': 'Starting PDF compression...',
+            'cancelled': False
+        }
+        
+        # Start compress in background thread
+        compress_thread = threading.Thread(
+            target=compress_pdf_with_progress,
+            args=(job_id, input_path, output_path, should_optimize, compress_progress)
+        )
+        compress_thread.daemon = True
+        compress_thread.start()
+        
+        # Return job ID for progress tracking
+        return jsonify({'success': True, 'job_id': job_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -175,7 +187,8 @@ def api_flatten_pdf():
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
         input_pdf.save(input_path)
         output_path = os.path.join(output_folder, secure_filename(output_filename))
-        
+        # Make filename unique if it already exists
+        output_path = make_unique_filename(output_path)
         # Generate job ID for progress tracking
         job_id = str(uuid.uuid4())
         
@@ -230,6 +243,12 @@ def api_split_pdf():
         
         # Ensure output folder exists
         os.makedirs(output_folder, exist_ok=True)
+
+        # Make zip filename unique if it already exists
+        zip_path = os.path.join(output_folder, secure_filename(output_zip))
+        output_zip_path = make_unique_zip_filename(zip_path)
+        # Extract just the filename for passing to the background function
+        output_zip = os.path.basename(output_zip_path)
         
         # Generate job ID
         job_id = str(uuid.uuid4())
@@ -289,7 +308,8 @@ def api_combine_pdfs():
         if not output_filename.lower().endswith('.pdf'):
             output_filename += '.pdf'
         output_path = os.path.join(output_folder, secure_filename(output_filename))
-        
+        # Make filename unique if it already exists
+        output_path = make_unique_filename(output_path)
         result = combine_pdfs(input_paths, output_path)
         
         # Clean up temporary optimized files
@@ -325,12 +345,29 @@ def api_optimize_pdf():
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
         input_pdf.save(input_path)
         output_path = os.path.join(output_folder, secure_filename(output_filename))
+        # Make filename unique if it already exists
+        output_path = make_unique_filename(output_path)
         
-        result = optimize_pdf(input_path, output_path, aggressive=aggressive)
-        if result:
-            return jsonify({'success': True, 'filename': output_path, 'error': None})
-        else:
-            return jsonify({'success': False, 'error': 'Optimization failed.'})
+        # Generate job ID for progress tracking
+        job_id = str(uuid.uuid4())
+        
+        # Initialize the progress entry before starting thread
+        optimize_progress[job_id] = {
+            'status': 'starting',
+            'message': 'Starting PDF optimization...',
+            'cancelled': False
+        }
+        
+        # Start optimize in background thread
+        optimize_thread = threading.Thread(
+            target=optimize_pdf_with_progress,
+            args=(job_id, input_path, output_path, aggressive, optimize_progress)
+        )
+        optimize_thread.daemon = True
+        optimize_thread.start()
+        
+        # Return job ID for progress tracking
+        return jsonify({'success': True, 'job_id': job_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -362,12 +399,29 @@ def api_extract_pages():
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(input_pdf.filename))
         input_pdf.save(input_path)
         output_path = os.path.join(output_folder, secure_filename(output_filename))
+        # Make filename unique if it already exists
+        output_path = make_unique_filename(output_path)
+        # Generate job ID for progress tracking
+        job_id = str(uuid.uuid4())
         
-        result = extract_pages(input_path, output_path, page_numbers)
-        if result:
-            return jsonify({'success': True, 'filename': output_path, 'error': None})
-        else:
-            return jsonify({'success': False, 'error': 'Page extraction failed.'})
+        # Initialize the progress entry before starting thread
+        extract_progress[job_id] = {
+            'status': 'starting',
+            'message': 'Starting page extraction...',
+            'cancelled': False
+        }
+        
+        # Start extract in background thread
+        extract_thread = threading.Thread(
+            target=extract_pages_with_progress,
+            args=(job_id, input_path, output_path, page_numbers, extract_progress)
+        )
+        extract_thread.daemon = True
+        extract_thread.start()
+        
+        # Return job ID for progress tracking
+        return jsonify({'success': True, 'job_id': job_id})
+        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -421,6 +475,81 @@ def cancel_flatten(job_id):
             return jsonify({'success': False, 'error': 'Job not found'}), 404
     except Exception as e:
         logging.error(f"Error cancelling flatten job {job_id}: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/extract_progress/<job_id>')
+def get_extract_progress(job_id):
+    """Get progress for an extract job"""
+    if job_id in extract_progress:
+        return jsonify(extract_progress[job_id])
+    else:
+        return jsonify({'error': 'Job not found'}), 404
+
+@app.route('/api/cancel_extract/<job_id>', methods=['POST'])
+def cancel_extract(job_id):
+    """Cancel an extract job"""
+    try:
+        if job_id in extract_progress:
+            # Mark the job as cancelled
+            extract_progress[job_id]['cancelled'] = True
+            extract_progress[job_id]['status'] = 'cancelled'
+            extract_progress[job_id]['message'] = 'Cancelling...'
+            logging.info(f"Marked extract job {job_id} for cancellation")
+            return jsonify({'success': True, 'message': 'Job marked for cancellation'})
+        else:
+            return jsonify({'success': False, 'error': 'Job not found'}), 404
+    except Exception as e:
+        logging.error(f"Error cancelling extract job {job_id}: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/optimize_progress/<job_id>')
+def get_optimize_progress(job_id):
+    """Get progress for an optimize job"""
+    if job_id in optimize_progress:
+        return jsonify(optimize_progress[job_id])
+    else:
+        return jsonify({'error': 'Job not found'}), 404
+
+@app.route('/api/cancel_optimize/<job_id>', methods=['POST'])
+def cancel_optimize(job_id):
+    """Cancel an optimize job"""
+    try:
+        if job_id in optimize_progress:
+            # Mark the job as cancelled
+            optimize_progress[job_id]['cancelled'] = True
+            optimize_progress[job_id]['status'] = 'cancelled'
+            optimize_progress[job_id]['message'] = 'Cancelling...'
+            logging.info(f"Marked optimize job {job_id} for cancellation")
+            return jsonify({'success': True, 'message': 'Job marked for cancellation'})
+        else:
+            return jsonify({'success': False, 'error': 'Job not found'}), 404
+    except Exception as e:
+        logging.error(f"Error cancelling optimize job {job_id}: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/compress_progress/<job_id>')
+def get_compress_progress(job_id):
+    """Get progress for a compress job"""
+    if job_id in compress_progress:
+        return jsonify(compress_progress[job_id])
+    else:
+        return jsonify({'error': 'Job not found'}), 404
+
+@app.route('/api/cancel_compress/<job_id>', methods=['POST'])
+def cancel_compress(job_id):
+    """Cancel a compress job"""
+    try:
+        if job_id in compress_progress:
+            # Mark the job as cancelled
+            compress_progress[job_id]['cancelled'] = True
+            compress_progress[job_id]['status'] = 'cancelled'
+            compress_progress[job_id]['message'] = 'Cancelling...'
+            logging.info(f"Marked compress job {job_id} for cancellation")
+            return jsonify({'success': True, 'message': 'Job marked for cancellation'})
+        else:
+            return jsonify({'success': False, 'error': 'Job not found'}), 404
+    except Exception as e:
+        logging.error(f"Error cancelling compress job {job_id}: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/download/<filename>')
