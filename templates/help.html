@@ -4,10 +4,249 @@
 
 {% block content %}
 <div id="help-container">
-    <h1>Help</h1>
+    <h1>PDF Manager Help</h1>
     <div class="brdr-20"></div>
     <section id="help-section">
-       
+        
+        <div class="help-intro">
+            <p>PDF Manager is a tool for working with PDF files. You can compress files to make them smaller, split 
+               large files into pieces, combine multiple files into one, "flatten" files to remove interactive elements 
+               and annotations, optimize files to reduce file size, and extract specific page ranges from a file.</p>
+        </div>
+
+        <div class="help-section">
+            <h2>Getting Started</h2>
+            <p>Each tool works in three simple steps:</p>
+            <ol>
+                <li><strong>Select your PDF file(s)</strong> - Click "Choose File" to pick files from your computer.</li>
+                <li><strong>Choose settings</strong> - Pick an output folder and filename, plus any options for that tool.</li>
+                <li><strong>Run the tool</strong> - Click "Run" and wait for the process to complete.</li>
+            </ol>
+            <p>All processed files are saved to your chosen output folder. By default, files are saved to 
+                "Documents/PDF_Manager_Output".</p>
+        </div>
+
+        <div class="help-section">
+            <h2>Available Tools</h2>
+
+            <div class="tool-help">
+                <h3><i class="fas fa-file-archive"></i> Compress PDF</h3>
+                <p><strong>What it does:</strong> Makes PDF files smaller without losing quality.</p>
+                <p><strong>When to use:</strong> When you need to reduce file size for email attachments, web uploads, or 
+                           saving storage space.</p>
+                <p><strong>Options:</strong></p>
+                <ul>
+                    <li><strong>Optimize before compressing:</strong> Cleans up the file structure first for better 
+                        compression results.</li>
+                </ul>
+                <p><strong>Note:</strong> Results vary depending on the original file. Files with many images compress more 
+                    than text-only files.</p>
+            </div>
+
+            <div class="tool-help">
+                <h3><i class="fas fa-file-code"></i> Split PDF</h3>
+                <p><strong>What it does:</strong> Breaks one large PDF into multiple smaller files.</p>
+                <p><strong>When to use:</strong> When you need to share specific sections of a large document, or when files 
+                      are too big to process individually.</p>
+                <p><strong>Options:</strong></p>
+                <ul>
+                    <li><strong>Split by pages:</strong> Choose how many pages per file (e.g., 10 pages each).</li>
+                    <li><strong>Split by file size:</strong> Set a maximum size for each file (e.g., 5 MB each).</li>
+                </ul>
+                <p><strong>Output:</strong> Creates a ZIP file containing all the split PDF pieces.</p>
+            </div>
+
+            <div class="tool-help">
+                <h3><i class="fas fa-layer-group"></i> Combine PDFs</h3>
+                <p><strong>What it does:</strong> Merges multiple PDF files into a single document.</p>
+                <p><strong>When to use:</strong> When you have several related documents that should be together, like 
+                    chapters of a report.</p>
+                <p><strong>How to use:</strong></p>
+                <ul>
+                    <li>Select multiple PDF files (hold Ctrl or Cmd while clicking to choose multiple files).</li>
+                    <li>Files are combined in alphanumerical order by filename; <i>Hint: use pre-fixes with numbers to control order 
+                        (e.g., for an 11-part file that might be 01_filename.pdf, 02_filename.pdf, ... 11_filename.pdf)</i>.</li>
+                </ul>
+                <p><strong>Options:</strong></p>
+                <ul>
+                    <li><strong>Optimize combined PDF:</strong> Cleans up and compresses the final merged file.</li>
+                </ul>
+            </div>
+
+            <div class="tool-help">
+                <h3><i class="fas fa-file-alt"></i> Flatten PDF</h3>
+                <p><strong>What it does:</strong> Converts all content to a flat image, removing interactive elements.</p>
+                <p><strong>When to use:</strong> When you need to ensure a document cannot be edited, or to remove form 
+                    fields and annotations.</p>
+                <p><strong>Important:</strong> This makes text non-selectable, so only use when you specifically need a 
+                    "locked" document.</p>
+                <p><strong>Process:</strong> Each page becomes a high-quality image, preserving the visual appearance.</p>
+                <p><strong>Output:</strong> A new PDF file with all pages flattened; Note that it tends to be smaller than 
+                    the original, depending on the number of interactive elements.</p>
+            </div>
+
+            <div class="tool-help">
+                <h3><i class="fas fa-cogs"></i> Optimize PDF</h3>
+                <p><strong>What it does:</strong> Cleans up and improves PDF file structure without changing content.</p>
+                <p><strong>When to use:</strong> When files seem larger than they should be, or to improve file performance.</p>
+                <p><strong>Options:</strong></p>
+                <ul>
+                    <li><strong>Aggressive optimization:</strong> More thorough cleanup that may take longer but gives better results</li>
+                </ul>
+                <p><strong>Benefits:</strong> Can reduce file size and make PDFs load faster.</p>
+            </div>
+
+            <div class="tool-help">
+                <h3><i class="fas fa-file-export"></i> Extract Pages</h3>
+                <p><strong>What it does:</strong> Creates a new PDF containing only the pages you specify.</p>
+                <p><strong>When to use:</strong> When you only need certain pages from a larger document.</p>
+                <p><strong>How to specify pages:</strong></p>
+                <ul>
+                    <li><strong>Single pages:</strong> 1, 5, 10 (extracts pages 1, 5, and 10)</li>
+                    <li><strong>Page ranges:</strong> 1-5, 10-15 (extracts pages 1 through 5, and 10 through 15)</li>
+                    <li><strong>Mixed:</strong> 1, 3-7, 12 (extracts page 1, pages 3 through 7, and page 12)</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="help-section">
+            <h2>Tips and Best Practices</h2>
+            
+            <div class="tip-section">
+                <h3>File Selection</h3>
+                <ul>
+                    <li>Only PDF files are accepted - other file types will not work.</li>
+                    <li>For combining files, select all files at once by holding Ctrl (Windows) or Cmd (Mac) while clicking.</li>
+                    <li>Files are processed in alphabetical order when combining.</li>
+                </ul>
+            </div>
+
+            <div class="tip-section">
+                <h3>Output Folders</h3>
+                <ul>
+                    <li>Click "Browse" to choose where your processed files are saved.</li>
+                    <li>The default location is "Documents/PDF_Manager_Output".</li>
+                    <li>If a file with the same name already exists, a number is added automatically.</li>
+                </ul>
+            </div>
+
+            <div class="tip-section">
+                <h3>Processing Large Files</h3>
+                <ul>
+                    <li>Large files may take several minutes to process - this is normal.</li>
+                    <li>You can cancel any operation by clicking the "Cancel" button. Note that this can 
+                        still take a while to occur, depending on the current phase of a process.</li>
+                    <li>Don't close the application while processing files.</li>
+                    <li>A progress dialog shows the current status.</li>
+                </ul>
+            </div>
+
+            <div class="tip-section">
+                <h3>File Naming</h3>
+                <ul>
+                    <li>Output filenames are suggested automatically based on your input files.</li>
+                    <li>You can change the filename before running any tool.</li>
+                    <li>Avoid special characters like < > : " / \ | ? * in filenames.</li>
+                    <li>The .pdf extension is added automatically if you don't include it.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="help-section">
+            <h2>Troubleshooting</h2>
+            
+            <div class="troubleshoot-section">
+                <h3>Common Error Messages</h3>
+                
+                <div class="issue">
+                    <h4>"Please fill in all required fields"</h4>
+                    <p>This appears when you haven't completed all necessary inputs. Make sure you have:</p>
+                    <ul>
+                        <li>Selected a PDF file (or multiple files for combining)</li>
+                        <li>Entered an output filename</li>
+                        <li>Chosen an output folder</li>
+                        <li>For page extraction: entered valid page numbers</li>
+                    </ul>
+                </div>
+
+                <div class="issue">
+                    <h4>"Missing required fields"</h4>
+                    <p>The server didn't receive all the necessary information. Check that your file selection didn't 
+                        get cleared and all form fields are filled out properly.</p>
+                </div>
+
+                <div class="issue">
+                    <h4>"Either max pages or max size must be specified" (Split tool)</h4>
+                    <p>When splitting PDFs, you must choose either "Split by pages" OR "Split by file size" - you 
+                        cannot leave both empty.</p>
+                </div>
+
+                <div class="issue">
+                    <h4>"Cannot specify both max pages and max size" (Split tool)</h4>
+                    <p>When splitting PDFs, you can only use one method at a time. Choose either pages per file OR 
+                        maximum file size, not both.</p>
+                </div>
+
+                <div class="issue">
+                    <h4>Invalid page number errors (Extract tool)</h4>
+                    <p>These occur when page numbers are formatted incorrectly:</p>
+                    <ul>
+                        <li><strong>"Invalid range format":</strong> Use correct format like "3-7" for ranges</li>
+                        <li><strong>"Invalid numbers in range":</strong> Make sure page numbers are actual numbers</li>
+                        <li><strong>"Start page must be less than or equal to end page":</strong> In ranges like "5-3", the 
+                            first number must be smaller</li>
+                        <li><strong>"Invalid page number(s)":</strong> Page numbers must be within the document's actual 
+                            page count</li>
+                    </ul>
+                </div>
+
+                <div class="issue">
+                    <h4>"No folder selected"</h4>
+                    <p>The folder selection dialog was cancelled or failed. Click "Browse" again to select an output folder.</p>
+                </div>
+
+                <div class="issue">
+                    <h4>"An unknown error occurred"</h4>
+                    <p>A general error that can be caused by:</p>
+                    <ul>
+                        <li>Corrupted or password-protected PDF files</li>
+                        <li>Insufficient disk space</li>
+                        <li>File permission issues</li>
+                        <li>Very large files that exceed system limits</li>
+                    </ul>
+                    <p>Try using a different PDF file or freeing up disk space.</p>
+                </div>
+
+            </div>
+
+            <div class="troubleshoot-section">
+                <h3>File-Related Issues</h3>
+                
+                <div class="issue">
+                    <h4>Processing stops or fails with large files</h4>
+                    <p>Large PDF files (over 100MB) may cause timeouts or memory issues. Try:</p>
+                    <ul>
+                        <li>Splitting the file into smaller pieces first</li>
+                        <li>Using less aggressive optimization settings</li>
+                        <li>Closing other applications to free up memory</li>
+                    </ul>
+                </div>
+
+                <div class="issue">
+                    <h4>Files don't appear in output folder</h4>
+                    <p>Check that the operation completed successfully and verify you're looking in the correct output 
+                        folder. The default location is "Documents/PDF_Manager_Output".</p>
+                </div>
+
+                <div class="issue">
+                    <h4>Progress dialog shows but nothing happens</h4>
+                    <p>The background process may have encountered an issue. Wait a few moments, then try cancelling and 
+                        restarting the operation.</p>
+                </div>
+
+            </div>
+        </div>
+
     </section>
     <div class="brdr-20"></div>
 </div>

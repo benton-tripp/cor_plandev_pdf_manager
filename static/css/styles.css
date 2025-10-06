@@ -646,3 +646,180 @@ footer {
         font-size: 0.7em;
     }
 }
+
+/* --- Help Page Styles --- */
+#help-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 20px;
+    line-height: 1.6;
+}
+
+#help-container h1 {
+    color: #046A38;
+    text-align: center;
+    font-size: 2.5em;
+    margin-bottom: 20px;
+    font-weight: 300;
+}
+
+.help-intro {
+    background: #f0f8f4;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+    border-left: 4px solid #046A38;
+}
+
+.help-intro p {
+    font-size: 1.1em;
+    color: #333;
+    margin: 0;
+}
+
+.help-section {
+    margin-bottom: 40px;
+}
+
+.help-section h2 {
+    color: #046A38;
+    font-size: 1.8em;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #046A38;
+    padding-bottom: 10px;
+}
+
+.help-section h3 {
+    color: #333;
+    font-size: 1.3em;
+    margin: 25px 0 15px 0;
+}
+
+.help-section h4 {
+    color: #046A38;
+    font-size: 1.1em;
+    margin: 20px 0 10px 0;
+}
+
+.help-section p {
+    color: #444;
+    margin-bottom: 15px;
+}
+
+.help-section ul, .help-section ol {
+    color: #444;
+    margin: 10px 0 15px 25px;
+}
+
+.help-section li {
+    margin-bottom: 8px;
+}
+
+.tool-help {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 25px;
+    margin-bottom: 25px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.tool-help h3 {
+    color: #046A38;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.4em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.tool-help h3 i {
+    font-size: 1.2em;
+    color: #046A38;
+}
+
+.tool-help p:first-of-type {
+    font-weight: 500;
+    color: #333;
+}
+
+.tip-section, .troubleshoot-section {
+    background: #fafafa;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 25px;
+}
+
+.tip-section h3, .troubleshoot-section h3 {
+    color: #046A38;
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+.issue {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.issue h4 {
+    color: #d73502;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+}
+
+.brdr-20 {
+    height: 20px;
+}
+
+/* Responsive help page styles */
+@media (max-width: 900px) {
+    #help-container {
+        padding: 0 15px;
+    }
+    
+    #help-container h1 {
+        font-size: 2em;
+    }
+    
+    .help-section h2 {
+        font-size: 1.5em;
+    }
+    
+    .tool-help {
+        padding: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    #help-container {
+        padding: 0 10px;
+    }
+    
+    #help-container h1 {
+        font-size: 1.8em;
+    }
+    
+    .help-section h2 {
+        font-size: 1.3em;
+    }
+    
+    .tool-help h3 {
+        font-size: 1.2em;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .help-section ul, .help-section ol {
+        margin-left: 20px;
+    }
+    
+    .tool-help, .tip-section, .troubleshoot-section, .issue {
+        padding: 15px;
+    }
+}

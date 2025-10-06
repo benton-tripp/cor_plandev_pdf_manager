@@ -12,7 +12,6 @@ from manage_pdfs.extract_pages import extract_pages
 from manage_pdfs.optimize import optimize_pdf
 from manage_pdfs.compress import compress_pdf
 from manage_pdfs.combine import combine_pdfs
-from manage_pdfs.combine import combine_pdfs
 
 
 def flatten_pdf_with_progress(job_id, input_path, output_path, flatten_progress):
