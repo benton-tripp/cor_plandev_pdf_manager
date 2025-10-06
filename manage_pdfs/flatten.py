@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Usage: python flatten.py input.pdf output.pdf [--dpi 300] [--quality high]
 
-def flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=95):
+def flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=95, progress_callback=None, cancellation_checker=None):
     """
     True PDF flattening by converting each page to a high-resolution pixelized image.
     
@@ -68,11 +68,39 @@ def flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=9
         
         logging.info(f"Processing {page_count} pages...")
         
+        # Initial progress callback
+        if progress_callback:
+            if not progress_callback(0, page_count, 0, "Starting PDF flattening..."):
+                logging.info("Flatten operation cancelled during initialization")
+                source_doc.close()
+                return False
+        
         # Create new empty PDF document for the flattened pages
         flattened_doc = fitz.open()
         
         for page_num in range(page_count):
+            # Check for cancellation before each page
+            if cancellation_checker and cancellation_checker():
+                logging.info(f"Flatten operation cancelled before processing page {page_num + 1}")
+                try:
+                    source_doc.close()
+                    flattened_doc.close()
+                except:
+                    pass  # Ignore errors during cancellation cleanup
+                return False
+            
             logging.info(f"Pixelizing page {page_num + 1}/{page_count}...")
+            
+            # Progress callback for current page
+            if progress_callback:
+                if not progress_callback(page_num, page_count, int((page_num / page_count) * 100), f"Flattening page {page_num + 1} of {page_count}..."):
+                    logging.info(f"Flatten operation cancelled while processing page {page_num + 1}")
+                    try:
+                        source_doc.close()
+                        flattened_doc.close()
+                    except:
+                        pass  # Ignore errors during cancellation cleanup
+                    return False
             
             # Get the page
             page = source_doc[page_num]
@@ -125,9 +153,31 @@ def flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=9
             
             # Clean up
             pixmap = None
+            
+            # Progress callback after page completion
+            current_page = page_num + 1
+            if progress_callback:
+                if not progress_callback(current_page, page_count, int((current_page / page_count) * 100), f"Flattening page {current_page} of {page_count}..."):
+                    logging.info(f"Flatten operation cancelled after completing page {current_page}")
+                    try:
+                        source_doc.close()
+                        flattened_doc.close()
+                    except:
+                        pass  # Ignore errors during cancellation cleanup
+                    return False
         
         # Close source document
         source_doc.close()
+        
+        # Final progress callback before saving
+        if progress_callback:
+            if not progress_callback(page_count, page_count, 95, "Saving flattened PDF..."):
+                logging.info("Flatten operation cancelled before saving")
+                try:
+                    flattened_doc.close()
+                except:
+                    pass
+                return False
         
         # Save the completely pixelized PDF
         logging.info(f"Saving pixelized PDF with {page_count} rasterized pages...")
@@ -145,6 +195,10 @@ def flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=9
         logging.info(f"Text is no longer selectable or searchable")
         logging.info(f"All interactive elements are now static pixels")
         logging.info(f"Pixelized PDF saved to '{output_path}'")
+        
+        # Final completion callback
+        if progress_callback:
+            progress_callback(page_count, page_count, 100, "Flatten complete!")
         
         return True
         

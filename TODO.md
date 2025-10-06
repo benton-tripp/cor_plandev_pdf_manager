@@ -1,11 +1,9 @@
 - Cancel buttons for running processes
-    - Split (TODO: currently can take a long time depending on the number of pages in a split)
-    - Compress
+    - √ Split 
     - Optimize
     - Combine
-    - Flatten
+    - √ Flatten
     - Extract pages
-- Progress bar for flatten PDF (page by page)
 - Help page
 - Test "Optimize PDF" more to ensure it is actually optimizing (current approach is very conservative)
 - Detailed comments & documentation

@@ -55,6 +55,9 @@ redaction_services = {}
 # Split progress tracking
 split_progress = {}
 
+# Flatten progress tracking
+flatten_progress = {}
+
 ### Page Routes ####
 
 @app.route('/')
@@ -151,6 +154,78 @@ def api_compress_pdf():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def flatten_pdf_with_progress(job_id, input_path, output_path):
+    """Run PDF flatten with progress tracking"""
+    try:
+        # Initialize progress
+        flatten_progress[job_id] = {
+            'status': 'starting',
+            'current_page': 0,
+            'total_pages': 0,
+            'percentage': 0,
+            'message': 'Initializing...',
+            'cancelled': False
+        }
+        
+        # Call flatten function with progress callback
+        def progress_callback(current_page, total_pages, percentage, message):
+            # Check for cancellation request
+            if flatten_progress[job_id].get('cancelled', False):
+                logging.info(f"Flatten job {job_id} cancelled during progress callback")
+                return False  # Signal cancellation to flatten function
+            
+            # Update progress dictionary
+            flatten_progress[job_id].update({
+                'status': 'processing',
+                'current_page': current_page,
+                'total_pages': total_pages,
+                'percentage': percentage,
+                'message': message
+            })
+            
+            logging.debug(f"Flatten progress update: page {current_page}/{total_pages}, {percentage}% - {message}")
+            return True  # Continue processing
+        
+        # Create a cancellation checker function
+        def cancellation_checker():
+            return flatten_progress[job_id].get('cancelled', False)
+        
+        # Call flatten_pdf with progress callback and cancellation checker
+        result = flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=95, 
+                           progress_callback=progress_callback, cancellation_checker=cancellation_checker)
+        
+        # Check if operation was cancelled during processing
+        if flatten_progress[job_id].get('cancelled', False):
+            logging.info(f"Flatten job {job_id} was cancelled")
+            # Mark as cancelled immediately for fast user feedback
+            flatten_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'Flatten operation was cancelled',
+                'percentage': 0
+            })
+        elif result:
+            # Mark as complete
+            flatten_progress[job_id] = {
+                'status': 'complete',
+                'current_page': flatten_progress[job_id].get('total_pages', 0),
+                'total_pages': flatten_progress[job_id].get('total_pages', 0),
+                'percentage': 100,
+                'message': 'Complete!',
+                'output_path': output_path
+            }
+        else:
+            flatten_progress[job_id] = {
+                'status': 'error',
+                'message': 'Flatten failed',
+                'percentage': 0
+            }
+    except Exception as e:
+        flatten_progress[job_id] = {
+            'status': 'error',
+            'message': f'Error: {str(e)}',
+            'percentage': 0
+        }
+
 @app.route('/api/flatten_pdf', methods=['POST'])
 def api_flatten_pdf():
     try:
@@ -172,12 +247,20 @@ def api_flatten_pdf():
         input_pdf.save(input_path)
         output_path = os.path.join(output_folder, secure_filename(output_filename))
         
-        # Use the new pixelized flattening with high quality settings
-        result = flatten_pdf(input_path, output_path, dpi=300, quality='high', jpeg_quality=95)
-        if result:
-            return jsonify({'success': True, 'filename': output_path, 'error': None})
-        else:
-            return jsonify({'success': False, 'error': 'Flattening failed.'})
+        # Generate job ID for progress tracking
+        job_id = str(uuid.uuid4())
+        
+        # Start flatten in background thread
+        flatten_thread = threading.Thread(
+            target=flatten_pdf_with_progress,
+            args=(job_id, input_path, output_path)
+        )
+        flatten_thread.daemon = True
+        flatten_thread.start()
+        
+        # Return job ID for progress tracking
+        return jsonify({'success': True, 'job_id': job_id})
+        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -536,6 +619,32 @@ def cancel_split(job_id):
             return jsonify({'success': False, 'error': 'Job not found'}), 404
     except Exception as e:
         logging.error(f"Error cancelling split job {job_id}: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/flatten_progress/<job_id>')
+def get_flatten_progress(job_id):
+    """Get progress for a flatten job"""
+    if job_id in flatten_progress:
+        return jsonify(flatten_progress[job_id])
+    else:
+        return jsonify({'error': 'Job not found'}), 404
+
+@app.route('/api/cancel_flatten/<job_id>', methods=['POST'])
+def cancel_flatten(job_id):
+    """Cancel a flatten job"""
+    try:
+        if job_id in flatten_progress:
+            # Mark the job as cancelled
+            flatten_progress[job_id]['cancelled'] = True
+            flatten_progress[job_id]['status'] = 'cancelled'
+            flatten_progress[job_id]['message'] = 'Cancelling...'
+            
+            logging.info(f"Flatten job {job_id} marked for cancellation")
+            return jsonify({'success': True, 'message': 'Cancellation requested'})
+        else:
+            return jsonify({'success': False, 'error': 'Job not found'}), 404
+    except Exception as e:
+        logging.error(f"Error cancelling flatten job {job_id}: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/download/<filename>')
