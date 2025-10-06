@@ -19,7 +19,7 @@ from manage_pdfs.optimize import optimize_pdf
 from manage_pdfs.extract_pages import extract_pages
 from utils.manage_temp import cleanup_temp_folder
 from utils.manage_output_dir import get_default_output_folder, FolderSelector
-from utils.process_with_progress import flatten_pdf_with_progress, split_pdf_with_progress, extract_pages_with_progress, optimize_pdf_with_progress, compress_pdf_with_progress
+from utils.process_with_progress import flatten_pdf_with_progress, split_pdf_with_progress, extract_pages_with_progress, optimize_pdf_with_progress, compress_pdf_with_progress, combine_pdf_with_progress
 from utils.filename_utils import make_unique_filename, make_unique_zip_filename
 
 DEBUG = True
@@ -68,6 +68,9 @@ optimize_progress = {}
 
 # Compress progress tracking
 compress_progress = {}
+
+# Combine progress tracking
+combine_progress = {}
 
 ### Page Routes ####
 
@@ -270,57 +273,64 @@ def api_split_pdf():
 @app.route('/api/combine_pdfs', methods=['POST'])
 def api_combine_pdfs():
     try:
+        # Debug logging
+        logging.debug(f"Request method: {request.method}")
+        logging.debug(f"Request content type: {request.content_type}")
+        logging.debug(f"Request files: {list(request.files.keys())}")
+        logging.debug(f"Request form: {dict(request.form)}")
+        
         pdf_files = request.files.getlist('pdf_list')
         output_filename = request.form.get('output_filename')
         output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
         should_optimize = request.form.get('optimize', 'false').lower() == 'true'
         
+        logging.debug(f"pdf_files count: {len(pdf_files) if pdf_files else 0}")
+        logging.debug(f"output_filename: {output_filename}")
+        logging.debug(f"output_folder: {output_folder}")
+        logging.debug(f"should_optimize: {should_optimize}")
+        
         if not pdf_files or not output_filename:
+            logging.error(f"Missing required fields - pdf_files: {len(pdf_files) if pdf_files else 0}, output_filename: {output_filename}")
             return jsonify({'success': False, 'error': 'Missing required fields.'}), 400
+        
+        # Ensure .pdf extension
+        if not output_filename.lower().endswith('.pdf'):
+            output_filename += '.pdf'
         
         # Ensure output folder exists
         os.makedirs(output_folder, exist_ok=True)
         
+        # Save all input files to temporary locations
         input_paths = []
-        optimized_paths = []
-        
-        # Save all input files and optionally optimize them
         for i, f in enumerate(pdf_files):
             path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(f.filename))
             f.save(path)
-            
-            if should_optimize:
-                # Create optimized version
-                optimized_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_optimized_{i}_{secure_filename(f.filename)}")
-                optimize_result = optimize_pdf(path, optimized_path, aggressive=False)
-                if not optimize_result:
-                    # Clean up any previously created files
-                    for fp in optimized_paths:
-                        if os.path.exists(fp):
-                            os.unlink(fp)
-                    return jsonify({'success': False, 'error': f'Optimization failed for file: {f.filename}'})
-                
-                input_paths.append(optimized_path)
-                optimized_paths.append(optimized_path)
-            else:
-                input_paths.append(path)
+            input_paths.append(path)
         
-        if not output_filename.lower().endswith('.pdf'):
-            output_filename += '.pdf'
         output_path = os.path.join(output_folder, secure_filename(output_filename))
         # Make filename unique if it already exists
         output_path = make_unique_filename(output_path)
-        result = combine_pdfs(input_paths, output_path)
         
-        # Clean up temporary optimized files
-        for fp in optimized_paths:
-            if os.path.exists(fp):
-                os.unlink(fp)
+        # Generate job ID for progress tracking
+        job_id = str(uuid.uuid4())
         
-        if result:
-            return jsonify({'success': True, 'filename': output_path, 'error': None})
-        else:
-            return jsonify({'success': False, 'error': 'Combine failed.'})
+        # Initialize the progress entry before starting thread
+        combine_progress[job_id] = {
+            'status': 'starting',
+            'message': 'Starting PDF combination...',
+            'cancelled': False
+        }
+        
+        # Start combine in background thread
+        combine_thread = threading.Thread(
+            target=combine_pdf_with_progress,
+            args=(job_id, input_paths, output_path, should_optimize, combine_progress)
+        )
+        combine_thread.daemon = True
+        combine_thread.start()
+        
+        # Return job ID for progress tracking
+        return jsonify({'success': True, 'job_id': job_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -550,6 +560,31 @@ def cancel_compress(job_id):
             return jsonify({'success': False, 'error': 'Job not found'}), 404
     except Exception as e:
         logging.error(f"Error cancelling compress job {job_id}: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/combine_progress/<job_id>')
+def get_combine_progress(job_id):
+    """Get progress for a combine job"""
+    if job_id in combine_progress:
+        return jsonify(combine_progress[job_id])
+    else:
+        return jsonify({'error': 'Job not found'}), 404
+
+@app.route('/api/cancel_combine/<job_id>', methods=['POST'])
+def cancel_combine(job_id):
+    """Cancel a combine job"""
+    try:
+        if job_id in combine_progress:
+            # Mark the job as cancelled
+            combine_progress[job_id]['cancelled'] = True
+            combine_progress[job_id]['status'] = 'cancelled'
+            combine_progress[job_id]['message'] = 'Cancelling...'
+            logging.info(f"Marked combine job {job_id} for cancellation")
+            return jsonify({'success': True, 'message': 'Job marked for cancellation'})
+        else:
+            return jsonify({'success': False, 'error': 'Job not found'}), 404
+    except Exception as e:
+        logging.error(f"Error cancelling combine job {job_id}: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/download/<filename>')

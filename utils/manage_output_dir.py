@@ -33,15 +33,38 @@ class FolderSelector:
         self.initialdir = get_default_output_folder()
     
     def select_folder(self):
-        """Open folder selection dialog"""
+        """Open folder selection dialog on the current screen"""
         try:
             # Create a root window and hide it
             root = tk.Tk()
             root.withdraw()
+            
+            # Position the root window to help dialog appear on correct screen
+            try:
+                # Try to get screen dimensions and position dialog appropriately
+                screen_width = root.winfo_screenwidth()
+                screen_height = root.winfo_screenheight()
+                
+                # Position root window at center of primary screen
+                # This helps influence where the dialog appears
+                x = (screen_width // 2) - 200
+                y = (screen_height // 2) - 150
+                root.geometry(f"400x300+{x}+{y}")
+                
+                # Update the root window to ensure geometry is applied
+                root.update_idletasks()
+                
+            except Exception as e:
+                print(f"Warning: Could not position dialog optimally: {e}")
+            
+            # Bring to front and make topmost
             root.attributes('-topmost', True)
+            root.lift()
+            root.focus_force()
             
             # Open folder dialog
             folder_path = filedialog.askdirectory(
+                parent=root,
                 title="Select Output Folder",
                 initialdir=os.path.expanduser("~/Documents")
             )

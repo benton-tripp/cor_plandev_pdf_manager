@@ -12,7 +12,9 @@ export const state = {
     currentOptimizeJobId: null,
     currentOptimizeRequest: null,
     currentCompressJobId: null,
-    currentCompressRequest: null
+    currentCompressRequest: null,
+    currentCombineJobId: null,
+    currentCombineRequest: null
 };
 
 // General setter for state properties

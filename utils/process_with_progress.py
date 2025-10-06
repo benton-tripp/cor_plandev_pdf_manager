@@ -11,6 +11,8 @@ from manage_pdfs.split import split_pdf_with_progress as split_func
 from manage_pdfs.extract_pages import extract_pages
 from manage_pdfs.optimize import optimize_pdf
 from manage_pdfs.compress import compress_pdf
+from manage_pdfs.combine import combine_pdfs
+from manage_pdfs.combine import combine_pdfs
 
 
 def flatten_pdf_with_progress(job_id, input_path, output_path, flatten_progress):
@@ -516,6 +518,158 @@ def compress_pdf_with_progress(job_id, input_path, output_path, should_optimize,
             }
     except Exception as e:
         compress_progress[job_id] = {
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }
+
+
+def combine_pdf_with_progress(job_id, input_paths, output_path, should_optimize, combine_progress):
+    """Run PDF combination with progress tracking"""
+    try:
+        # Check if job was already cancelled before we even started
+        if combine_progress[job_id].get('cancelled', False):
+            logging.info(f"Combine job {job_id} was cancelled before background thread started")
+            combine_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF combination was cancelled'
+            })
+            return
+        
+        # Add a small delay to allow frontend cancellation during startup
+        time.sleep(0.1)  # 100ms delay
+        
+        # Check again after delay - this catches cancellations during startup
+        if combine_progress[job_id].get('cancelled', False):
+            logging.info(f"Combine job {job_id} was cancelled during startup delay")
+            combine_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF combination was cancelled'
+            })
+            return
+        
+        # Handle optimization if requested
+        optimized_paths = []
+        actual_input_paths = input_paths
+        
+        if should_optimize and len(input_paths) > 0:
+            combine_progress[job_id].update({
+                'status': 'processing',
+                'message': f'Optimizing {len(input_paths)} PDF files before combining...'
+            })
+            
+            # Check for cancellation before optimization
+            if combine_progress[job_id].get('cancelled', False):
+                logging.info(f"Combine job {job_id} cancelled before optimization")
+                combine_progress[job_id].update({
+                    'status': 'cancelled',
+                    'message': 'PDF combination was cancelled'
+                })
+                return
+            
+            # Optimize each file
+            for i, input_path in enumerate(input_paths):
+                if combine_progress[job_id].get('cancelled', False):
+                    # Clean up any optimized files created so far
+                    for opt_path in optimized_paths:
+                        if os.path.exists(opt_path):
+                            os.unlink(opt_path)
+                    combine_progress[job_id].update({
+                        'status': 'cancelled',
+                        'message': 'PDF combination was cancelled'
+                    })
+                    return
+                
+                combine_progress[job_id].update({
+                    'status': 'processing',
+                    'message': f'Optimizing PDF {i+1} of {len(input_paths)}...'
+                })
+                
+                # Create optimized version
+                base_name = os.path.splitext(os.path.basename(input_path))[0]
+                temp_dir = os.path.dirname(input_path)
+                optimized_path = os.path.join(temp_dir, f"temp_optimized_{i}_{base_name}.pdf")
+                
+                optimize_result = optimize_pdf(input_path, optimized_path, aggressive=False)
+                if not optimize_result:
+                    # Clean up any previously created optimized files
+                    for opt_path in optimized_paths:
+                        if os.path.exists(opt_path):
+                            os.unlink(opt_path)
+                    combine_progress[job_id] = {
+                        'status': 'error',
+                        'message': f'Optimization failed for file {i+1}'
+                    }
+                    return
+                
+                optimized_paths.append(optimized_path)
+            
+            actual_input_paths = optimized_paths
+        
+        # Update status for combination phase
+        combine_progress[job_id].update({
+            'status': 'processing',
+            'message': f'Combining {len(actual_input_paths)} PDF files...'
+        })
+        
+        # Add a small delay to ensure the UI sees the combination message
+        time.sleep(0.5)  # 500ms delay to ensure UI polling catches the message update
+        
+        # Log the combination start for debugging
+        logging.info(f"Starting combination for job {job_id}: {len(actual_input_paths)} files -> {output_path}")
+
+        # Final check for cancellation before combination
+        if combine_progress[job_id].get('cancelled', False):
+            # Clean up temporary optimized files if they were created
+            for opt_path in optimized_paths:
+                if os.path.exists(opt_path):
+                    os.unlink(opt_path)
+            combine_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF combination was cancelled'
+            })
+            return
+        
+        # Call combine_pdfs function (no cancellation checker support in current implementation)
+        result = combine_pdfs(actual_input_paths, output_path)
+        
+        # Log combination completion
+        logging.info(f"Combination completed for job {job_id}, result: {result}")
+        
+        # Clean up temporary optimized files if they were created
+        for opt_path in optimized_paths:
+            if os.path.exists(opt_path):
+                os.unlink(opt_path)
+                logging.debug(f"Cleaned up temporary optimized file: {opt_path}")
+        
+        # Check if operation was cancelled during processing
+        if combine_progress[job_id].get('cancelled', False):
+            combine_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'PDF combination was cancelled'
+            })
+        elif result:
+            # Mark as complete
+            combine_progress[job_id] = {
+                'status': 'complete',
+                'message': 'PDF combination completed successfully!',
+                'filename': output_path
+            }
+        else:
+            combine_progress[job_id] = {
+                'status': 'error',
+                'message': 'PDF combination failed'
+            }
+            
+    except Exception as e:
+        # Clean up temporary optimized files on exception
+        try:
+            for opt_path in optimized_paths:
+                if os.path.exists(opt_path):
+                    os.unlink(opt_path)
+        except:
+            pass  # Ignore cleanup errors
+        
+        combine_progress[job_id] = {
             'status': 'error',
             'message': f'Error: {str(e)}'
         }

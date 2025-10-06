@@ -1,7 +1,7 @@
 - Cancel buttons for running processes
     - √ Split 
     - √ Optimize
-    - Combine
+    - √ Combine
     - √ Flatten
     - √ Extract pages
     - √ Compress
@@ -13,4 +13,4 @@
         - JS
         - Python Modules
         - app.py
-- Don't allow a process to start while an input file or output directory file explorer is open
+- When the browse output directory opens, open it on the current screen if there are multiple displays (same as browser window).
