@@ -263,14 +263,14 @@ footer {
 .pdf-tool-card {
     background: #fff;
     border-radius: 10px;
-    padding: 30px;
+    padding: 20px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     cursor: pointer;
     transition: all 0.3s ease;
     border: 2px solid transparent;
     display: flex;
     flex-direction: column;
-    min-height: 280px;
+    min-height: 250px;
 }
 
 .pdf-tool-card:hover {
@@ -452,6 +452,17 @@ footer {
     background: #555 !important;
 }
 
+.tool-modal-actions .btn-secondary {
+    font-size: 0.9em;
+    padding: 10px 20px;
+}
+
+/* NOT when disabled */
+.tool-modal-actions .btn-secondary:hover:not(:disabled) {
+    background: #555 !important;
+    color: #fff !important;
+}
+
 /* Spinner overlay for tool modals */
 #tool-spinner-overlay {
     position: fixed;
@@ -588,7 +599,7 @@ footer {
     }
     
     .pdf-tool-card {
-        padding: 20px;
+        padding: 15px;
         min-height: 240px;
     }
     

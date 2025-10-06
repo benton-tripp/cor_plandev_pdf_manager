@@ -44,7 +44,7 @@ def create_size_based_chunks(doc, max_chunk_size_mb):
     
     return chunks
 
-def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max_chunk_size_mb=None, no_overwrite=False, progress_callback=None):
+def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max_chunk_size_mb=None, no_overwrite=False, progress_callback=None, cancellation_checker=None):
     """Split PDF with progress tracking"""
     if not os.path.exists(input_pdf):
         logging.error(f"Input file '{input_pdf}' does not exist.")
@@ -78,7 +78,10 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
         
         # Progress callback for chunk calculation
         if progress_callback:
-            progress_callback(0, total_pages, 0, 0, "Calculating chunks...")
+            if not progress_callback(0, total_pages, 0, 0, "Calculating chunks..."):
+                logging.info("Split operation cancelled during chunk calculation")
+                doc.close()
+                return None
         
         # Create chunks based on the specified method
         if max_pages_per_chunk is not None:
@@ -95,12 +98,24 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
         
         # Initial progress callback
         if progress_callback:
-            progress_callback(0, total_pages, 0, total_chunks, "Starting PDF split...")
+            if not progress_callback(0, total_pages, 0, total_chunks, "Starting PDF split..."):
+                logging.info("Split operation cancelled during initialization")
+                doc.close()
+                return None
         
         # Calculate padding width based on total number of chunks
         padding_width = len(str(len(chunks)))
         chunks_completed = 0  # Track completed chunks separately
         for idx, page_range in enumerate(chunks, 1):
+            # Fast cancellation check at start of each chunk
+            if cancellation_checker and cancellation_checker():
+                logging.info(f"Split operation cancelled at start of chunk {idx}")
+                try:
+                    doc.close()
+                except:
+                    pass  # Ignore errors during cancellation cleanup
+                return None
+            
             # Zero-pad the index for proper sorting
             padded_idx = str(idx).zfill(padding_width)
             out_path = os.path.join(output_dir, f"{padded_idx}_{base_name}")
@@ -112,19 +127,37 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
                 current_page_count += len(page_range)
                 chunks_completed += 1
                 if progress_callback:
-                    progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Skipped chunk {idx} (already exists)")
+                    if not progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Skipped chunk {idx} (already exists)"):
+                        logging.info("Split operation cancelled while processing skipped chunks")
+                        doc.close()
+                        return None
                 continue
             
             new_doc = fitz.open()
             
             # Progress callback for starting this chunk
             if progress_callback:
-                progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Starting chunk {idx} ({len(page_range)} pages)")
+                if not progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Starting chunk {idx} ({len(page_range)} pages)"):
+                    logging.info(f"Split operation cancelled while starting chunk {idx}")
+                    new_doc.close()
+                    doc.close()
+                    return None
             
             # Insert pages one at a time to better control image duplication
             # This preserves links and annotations while minimizing duplication
             
             for page_num in page_range:
+                # Check for cancellation before each page (more responsive)
+                if cancellation_checker and cancellation_checker():
+                    logging.info(f"Split operation cancelled before processing page {page_num + 1}")
+                    # Fast cleanup - don't wait for full cleanup
+                    try:
+                        new_doc.close()
+                        doc.close()
+                    except:
+                        pass  # Ignore errors during cancellation cleanup
+                    return None
+                
                 logging.debug(f"Inserting page {page_num + 1} into chunk {idx}")
                 
                 # Insert each page individually to minimize cross-page image duplication
@@ -134,14 +167,32 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
                 # Progress callback AFTER each page insertion - now we've actually processed it
                 current_page_count += 1
                 if progress_callback:
-                    progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Processed page {current_page_count} for chunk {idx}")
+                    if not progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Processed page {current_page_count} for chunk {idx}"):
+                        logging.info(f"Split operation cancelled while processing page {current_page_count}")
+                        new_doc.close()
+                        doc.close()
+                        return None
             
             # Skip image analysis - it's too slow for large embedded images
             logging.debug(f"Completed inserting all pages for chunk {idx}")
             
+            # Check for cancellation before the potentially slow save operation
+            if cancellation_checker and cancellation_checker():
+                logging.info(f"Split operation cancelled before saving chunk {idx}")
+                try:
+                    new_doc.close()
+                    doc.close()
+                except:
+                    pass  # Ignore errors during cancellation cleanup
+                return None
+            
             # Progress callback for saving - ensure this gets sent and processed
             if progress_callback:
-                progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Saving chunk {idx}...")
+                if not progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Saving chunk {idx}..."):
+                    logging.info(f"Split operation cancelled while saving chunk {idx}")
+                    new_doc.close()
+                    doc.close()
+                    return None
                 # Force immediate logging to verify this callback is made
                 logging.info(f"SAVING CALLBACK SENT: Saving chunk {idx}... (page {current_page_count}/{total_pages})")
                 # Add a small delay to ensure this callback gets processed before the next one
@@ -163,14 +214,19 @@ def split_pdf_with_progress(input_pdf, output_dir, max_pages_per_chunk=None, max
             
             # Progress callback for completed chunk - now this chunk is complete
             if progress_callback:
-                progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Completed chunk {idx} ({len(page_range)} pages)")
+                if not progress_callback(current_page_count, total_pages, chunks_completed, total_chunks, f"Completed chunk {idx} ({len(page_range)} pages)"):
+                    logging.info(f"Split operation cancelled after completing chunk {idx}")
+                    doc.close()
+                    return None
                 logging.info(f"Chunk {idx} completed - {chunks_completed}/{total_chunks} chunks done")
         
         doc.close()
         
         # Final progress callback
         if progress_callback:
-            progress_callback(total_pages, total_pages, chunks_completed, total_chunks, "Split complete!")
+            if not progress_callback(total_pages, total_pages, chunks_completed, total_chunks, "Split complete!"):
+                logging.info("Split operation cancelled during final callback")
+                return None
         
         return True
     except Exception as e:

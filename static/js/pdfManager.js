@@ -93,12 +93,14 @@ function hideToolSpinner() {
 // Show split progress modal
 function showSplitProgress() {
   $('#split-progress-modal').fadeIn(200);
+  $('#split-cancel-btn').prop('disabled', false).text('Cancel');
   updateSplitProgress(0, 0, 0, 0, 0, 'Initializing...');
 }
 
 // Hide split progress modal
 function hideSplitProgress() {
   $('#split-progress-modal').fadeOut(200);
+  currentSplitJobId = null;
 }
 
 // Update split progress
@@ -130,8 +132,17 @@ function updateSplitProgress(currentPage, totalPages, currentChunk, totalChunks,
   $('#progress-status').text(message);
 }
 
-// Poll for split progress
+// Poll for split progress with adaptive polling for important state changes
 function pollSplitProgress(jobId) {
+  currentSplitJobId = jobId; // Store job ID for cancellation
+  
+  let lastState = {
+    currentPage: 0,
+    currentChunk: 0,
+    message: '',
+    percentage: 0
+  };
+  
   const poll = () => {
     $.ajax({
       url: `/api/split_progress/${jobId}`,
@@ -145,6 +156,7 @@ function pollSplitProgress(jobId) {
           return;
         }
         
+        // Always update the UI with latest data
         updateSplitProgress(
           data.current_page || 0,
           data.total_pages || 0,
@@ -154,6 +166,29 @@ function pollSplitProgress(jobId) {
           data.message || 'Processing...'
         );
         
+        // Detect important state changes (non-page updates)
+        const currentMessage = data.message || 'Processing...';
+        const isImportantStateChange = (
+          // New chunk operations (starting or saving)
+          (currentMessage.includes('Starting chunk') && !lastState.message.includes('Starting chunk')) ||
+          (currentMessage.includes('Saving chunk') && !lastState.message.includes('Saving chunk')) ||
+          // Zip creation or completion phases
+          (currentMessage.includes('Creating zip') && !lastState.message.includes('Creating zip')) ||
+          (currentMessage.includes('Complete') && !lastState.message.includes('Complete')) ||
+          // Chunk progress changes (not just page changes)
+          (data.current_chunk !== lastState.currentChunk) ||
+          // Significant percentage jumps (like going to zip creation phase)
+          (Math.abs((data.percentage || 0) - lastState.percentage) > 10)
+        );
+        
+        // Update our state tracking
+        lastState = {
+          currentPage: data.current_page || 0,
+          currentChunk: data.current_chunk || 0,
+          message: currentMessage,
+          percentage: data.percentage || 0
+        };
+        
         if (data.status === 'complete') {
           setTimeout(() => {
             hideSplitProgress();
@@ -162,12 +197,33 @@ function pollSplitProgress(jobId) {
               alert('PDF split successfully!\nSaved to: ' + data.zipfile);
             }
           }, 1000); // Show 100% for a moment before closing
+        } else if (data.status === 'cancelled') {
+          hideSplitProgress();
+          closeModal('split-modal');
+          alert('PDF split was cancelled.');
         } else if (data.status === 'error') {
           hideSplitProgress();
           $('#split-message').text('Error: ' + (data.message || 'Split failed'));
         } else {
-          // Continue polling - faster polling for better synchronization
-          setTimeout(poll, 250); // Poll every 250ms (4 times per second)
+          // Adaptive polling: faster for important state changes, regular for page updates
+          let pollInterval;
+          if (currentMessage.includes('Cancelling') || currentMessage.includes('Cancellation')) {
+            // Very fast polling when cancellation is in progress
+            pollInterval = 25; // 25ms for cancellation feedback
+            console.log('Cancellation detected, using very fast polling (25ms):', currentMessage);
+          } else if (isImportantStateChange) {
+            // More frequent polling when important operations are happening
+            pollInterval = 50; // 50ms for critical state changes
+            console.log('Important state change detected, using fast polling (50ms):', currentMessage);
+          } else if (currentMessage.includes('Saving') || currentMessage.includes('Creating')) {
+            // Medium polling during save/create operations
+            pollInterval = 75; // 75ms during save operations
+          } else {
+            // Regular polling for page processing
+            pollInterval = 100; // 100ms for regular page updates
+          }
+          
+          setTimeout(poll, pollInterval);
         }
       },
       error: function(xhr, status, error) {
@@ -183,6 +239,9 @@ function pollSplitProgress(jobId) {
 
 // Track total pages for split validation
 let splitTotalPages = 0;
+
+// Track current split job ID for cancellation
+let currentSplitJobId = null;
 
 // Validate inputs for compress PDF tool
 function validateCompressInputs() {
@@ -281,6 +340,34 @@ export function compressSplitCombinePDFs(window, document) {
   // --- Modal open/close logic ---
   $('.tool-modal-cancel').on('click', function() {
     closeModal($(this).data('modal'));
+  });
+
+  // --- Split cancel button handler ---
+  $('#split-cancel-btn').on('click', function() {
+    if (currentSplitJobId) {
+      // Disable button immediately to prevent multiple clicks
+      $(this).prop('disabled', true).text('Cancelling...');
+      
+      // Show immediate feedback to user
+      $('#progress-status').text('Cancellation requested...');
+      
+      $.ajax({
+        url: `/api/cancel_split/${currentSplitJobId}`,
+        type: 'POST',
+        success: function(data) {
+          console.log('Cancel request sent:', data);
+          // Show faster feedback
+          $('#progress-status').text('Cancelling operation, please wait...');
+          // Progress polling will handle the actual cleanup and modal closing
+        },
+        error: function(xhr, status, error) {
+          console.log('Cancel request error:', error);
+          // Re-enable button if cancel request failed
+          $('#split-cancel-btn').prop('disabled', false).text('Cancel');
+          $('#progress-status').text('Cancel request failed');
+        }
+      });
+    }
   });
 
   // --- Compress PDF ---
@@ -640,13 +727,7 @@ export function compressSplitCombinePDFs(window, document) {
         }
       }).catch(function(error) {
         console.log('Folder selection error:', error);
-        // Fallback to manual entry
-        let currentPath = $(inputId).val();
-        let newPath = prompt('Enter output folder path:', currentPath || defaultOutputFolder);
-        if (newPath && newPath.trim()) {
-          $(inputId).val(newPath.trim());
-          validationFunction();
-        }
+        // User cancelled - do nothing
       });
     } else {
       // Use Flask API for native folder selection (web app)
@@ -659,24 +740,12 @@ export function compressSplitCombinePDFs(window, document) {
             validationFunction();
           } else {
             console.log('Folder selection failed:', data.error);
-            // Fallback to manual entry
-            let currentPath = $(inputId).val();
-            let newPath = prompt('Enter output folder path:', currentPath || defaultOutputFolder);
-            if (newPath && newPath.trim()) {
-              $(inputId).val(newPath.trim());
-              validationFunction();
-            }
+            // User cancelled - do nothing
           }
         },
         error: function(xhr, status, error) {
           console.log('Folder selection API error:', error);
-          // Fallback to manual entry
-          let currentPath = $(inputId).val();
-          let newPath = prompt('Enter output folder path:', currentPath || defaultOutputFolder);
-          if (newPath && newPath.trim()) {
-            $(inputId).val(newPath.trim());
-            validationFunction();
-          }
+          // API error - do nothing
         }
       });
     }

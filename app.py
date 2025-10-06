@@ -193,11 +193,17 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
             'current_chunk': 0,
             'total_chunks': 0,
             'percentage': 0,
-            'message': 'Initializing...'
+            'message': 'Initializing...',
+            'cancelled': False
         }
         
         # Call split function with progress callback - no throttling
         def progress_callback(current_page, total_pages, current_chunk, total_chunks, message):
+            # Check for cancellation request - this is the primary cancellation check
+            if split_progress[job_id].get('cancelled', False):
+                logging.info(f"Split job {job_id} cancelled during progress callback")
+                return False  # Signal cancellation to split function
+            
             # Calculate progress as 70% for pages + 30% for chunks
             # This gives users feedback on both page processing AND chunk completion
             if total_pages > 0 and total_chunks > 0:
@@ -208,7 +214,7 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
                 percentage = 0
             
             # Always update the progress dictionary with every callback
-            split_progress[job_id] = {
+            split_progress[job_id].update({
                 'status': 'processing',
                 'current_page': current_page,
                 'total_pages': total_pages,
@@ -216,7 +222,7 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
                 'total_chunks': total_chunks,
                 'percentage': percentage,
                 'message': message
-            }
+            })
             
             # Log every update for debugging
             logging.debug(f"Progress update: page {current_page}/{total_pages}, chunk {current_chunk}/{total_chunks}, {percentage}% - {message}")
@@ -225,50 +231,104 @@ def split_pdf_with_progress(job_id, input_path, temp_dir, max_pages_per_chunk, m
             if 'Saving' in message:
                 logging.info(f"PROGRESS DICT UPDATED WITH SAVING: {message} - page {current_page}/{total_pages}")
                 logging.info(f"Frontend will see: {split_progress[job_id]}")
+            
+            return True  # Continue processing
         
-        # Call split_pdf with progress callback
+        # Create a cancellation checker function that can be passed to split function
+        def cancellation_checker():
+            return split_progress[job_id].get('cancelled', False)
+        
+        # Call split_pdf with progress callback and cancellation checker
         if max_pages_per_chunk:
-            result = split_func(input_path, temp_dir, max_pages_per_chunk=int(max_pages_per_chunk), progress_callback=progress_callback)
+            result = split_func(input_path, temp_dir, max_pages_per_chunk=int(max_pages_per_chunk), 
+                              progress_callback=progress_callback, cancellation_checker=cancellation_checker)
         else:
-            result = split_func(input_path, temp_dir, max_chunk_size_mb=float(max_chunk_size_mb), progress_callback=progress_callback)
+            result = split_func(input_path, temp_dir, max_chunk_size_mb=float(max_chunk_size_mb), 
+                              progress_callback=progress_callback, cancellation_checker=cancellation_checker)
         
-        if result:
-            # Update progress for zipping
-            split_progress[job_id]['message'] = 'Creating zip file...'
-            split_progress[job_id]['percentage'] = 95
+        # Check if operation was cancelled during processing
+        if split_progress[job_id].get('cancelled', False):
+            logging.info(f"Split job {job_id} was cancelled, cleaning up temp directory")
+            # Mark as cancelled immediately for fast user feedback
+            split_progress[job_id].update({
+                'status': 'cancelled',
+                'message': 'Split operation was cancelled',
+                'percentage': 0
+            })
+            # Clean up temporary directory in background thread for faster response
+            def cleanup_background():
+                try:
+                    if os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
+                    logging.info(f"Background cleanup completed for job {job_id}")
+                except Exception as e:
+                    logging.error(f"Background cleanup failed for job {job_id}: {e}")
             
-            # Zip all PDFs in temp_dir
-            zipname = output_zip
-            if not zipname.lower().endswith('.zip'):
-                zipname += '.zip'
-            zip_path = os.path.join(output_folder, secure_filename(zipname))
-            with zipfile.ZipFile(zip_path, 'w') as zipf:
-                for fname in os.listdir(temp_dir):
-                    fpath = os.path.join(temp_dir, fname)
-                    if os.path.isfile(fpath):
-                        zipf.write(fpath, arcname=fname)
-            
-            shutil.rmtree(temp_dir)
-            final_path = zip_path
-            
-            # Mark as complete
-            split_progress[job_id] = {
-                'status': 'complete',
-                'current_page': split_progress[job_id]['total_pages'],
-                'total_pages': split_progress[job_id]['total_pages'],
-                'current_chunk': split_progress[job_id]['total_chunks'],
-                'total_chunks': split_progress[job_id]['total_chunks'],
-                'percentage': 100,
-                'message': 'Complete!',
-                'zipfile': final_path
-            }
+            cleanup_thread = threading.Thread(target=cleanup_background, daemon=True)
+            cleanup_thread.start()
+        elif result:
+            # Check again before zipping in case cancellation happened during split
+            if split_progress[job_id].get('cancelled', False):
+                logging.info(f"Split job {job_id} cancelled before zipping")
+                # Mark as cancelled immediately
+                split_progress[job_id].update({
+                    'status': 'cancelled',
+                    'message': 'Split operation was cancelled',
+                    'percentage': 0
+                })
+                # Background cleanup
+                def cleanup_background():
+                    try:
+                        if os.path.exists(temp_dir):
+                            shutil.rmtree(temp_dir)
+                    except Exception as e:
+                        logging.error(f"Background cleanup failed: {e}")
+                
+                cleanup_thread = threading.Thread(target=cleanup_background, daemon=True)
+                cleanup_thread.start()
+            else:
+                # Update progress for zipping
+                split_progress[job_id]['message'] = 'Creating zip file...'
+                split_progress[job_id]['percentage'] = 95
+                
+                # Zip all PDFs in temp_dir
+                zipname = output_zip
+                if not zipname.lower().endswith('.zip'):
+                    zipname += '.zip'
+                zip_path = os.path.join(output_folder, secure_filename(zipname))
+                with zipfile.ZipFile(zip_path, 'w') as zipf:
+                    for fname in os.listdir(temp_dir):
+                        fpath = os.path.join(temp_dir, fname)
+                        if os.path.isfile(fpath):
+                            zipf.write(fpath, arcname=fname)
+                
+                shutil.rmtree(temp_dir)
+                final_path = zip_path
+                
+                # Mark as complete
+                split_progress[job_id] = {
+                    'status': 'complete',
+                    'current_page': split_progress[job_id]['total_pages'],
+                    'total_pages': split_progress[job_id]['total_pages'],
+                    'current_chunk': split_progress[job_id]['total_chunks'],
+                    'total_chunks': split_progress[job_id]['total_chunks'],
+                    'percentage': 100,
+                    'message': 'Complete!',
+                    'zipfile': final_path
+                }
         else:
+            # Clean up temp directory on failure
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
             split_progress[job_id] = {
                 'status': 'error',
                 'message': 'Split failed',
                 'percentage': 0
             }
     except Exception as e:
+        # Clean up temp directory on exception
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
         split_progress[job_id] = {
             'status': 'error',
             'message': f'Error: {str(e)}',
@@ -459,6 +519,24 @@ def get_split_progress(job_id):
         return jsonify(split_progress[job_id])
     else:
         return jsonify({'error': 'Job not found'}), 404
+
+@app.route('/api/cancel_split/<job_id>', methods=['POST'])
+def cancel_split(job_id):
+    """Cancel a split job"""
+    try:
+        if job_id in split_progress:
+            # Mark the job as cancelled
+            split_progress[job_id]['cancelled'] = True
+            split_progress[job_id]['status'] = 'cancelled'
+            split_progress[job_id]['message'] = 'Cancelling...'
+            
+            logging.info(f"Split job {job_id} marked for cancellation")
+            return jsonify({'success': True, 'message': 'Cancellation requested'})
+        else:
+            return jsonify({'success': False, 'error': 'Job not found'}), 404
+    except Exception as e:
+        logging.error(f"Error cancelling split job {job_id}: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/download/<filename>')
 def download_file(filename):

@@ -1,2 +1,16 @@
-- Progress bar for splitting PDFs is mest up (messages in UI are not synced or don't update)
-- If you push cancel for the output directory search, it opens a separate popup that it shouldn't
+- Cancel buttons for running processes
+    - Split (TODO: currently can take a long time depending on the number of pages in a split)
+    - Compress
+    - Optimize
+    - Combine
+    - Flatten
+    - Extract pages
+- Progress bar for flatten PDF (page by page)
+- Help page
+- Test "Optimize PDF" more to ensure it is actually optimizing (current approach is very conservative)
+- Detailed comments & documentation
+    - README
+    - Inline comments & page/module descriptions
+        - JS
+        - Python Modules
+        - app.py
