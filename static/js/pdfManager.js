@@ -1,484 +1,90 @@
-// pdfManager.js
-import {state} from './state.js';
+// pdfManager.js - Main PDF manager coordination// pdfManager.js - Main PDF manager coordination
 
-let defaultOutputFolder = '';
+import { state, initializeDefaultFolder, closeModal } from './state.js';import { state, initializeDefaultFolder, closeModal } from './state.js';
 
-// Load default output folder on page load
-$(document).ready(function() {
-  $.get('/api/get_default_output_folder')
-    .done(function(data) {
-      defaultOutputFolder = data.folder;
-      // Set default values in all output folder inputs
-      $('#compress-output-folder').val(defaultOutputFolder);
-      $('#split-output-folder').val(defaultOutputFolder);
-      $('#combine-output-folder').val(defaultOutputFolder);
-      $('#flatten-output-folder').val(defaultOutputFolder);
-      $('#optimize-output-folder').val(defaultOutputFolder);
-      $('#extract-output-folder').val(defaultOutputFolder);
-    })
-    .fail(function() {
-      console.warn('Could not load default output folder');
-    });
-});
+import { openModal, selectFolder } from './utils.js';import { openModal, selectFolder } from './utils.js';
 
-// open the modal with the given id
-function openModal(id) {
-  $('#' + id).fadeIn(200);
-}
+import { initializeCompress } from './pdfCompress.js';import { initializeCompress } from './pdfCompress.js';
 
-// Close modal and reset message
-function closeModal(id) {
-  $('#' + id).fadeOut(200);
-  $('#' + id + ' .tool-modal-message').text('');
-  // Clear inputs but preserve radio button states and reset to defaults
-  if (id === 'split-modal') {
-    $('#split-input').val('');
-    $('#split-filename').val('').prop('disabled', true);
-    $('#split-output-folder').val(defaultOutputFolder);
-    $('#split-max-pages').val('').prop('disabled', true);
-    $('#split-max-size').val('').prop('disabled', true);
-    // Reset radio buttons to default (pages)
-    $('#split-method-pages').prop('checked', true);
-    $('#split-pages-row').show();
-    $('#split-size-row').hide();
-    $('#split-warning').hide();
-    splitTotalPages = 0;
-  } else if (id === 'compress-modal') {
-    // Clear inputs and reset flatten checkbox for compress modal
-    $('#compress-input').val('');
-    $('#compress-filename').val('').prop('disabled', true);
-    $('#compress-output-folder').val(defaultOutputFolder);
-    $('#compress-optimize').prop('checked', false);
-  } else if (id === 'combine-modal') {
-    // Clear inputs and reset flatten checkbox for combine modal
-    $('#combine-input').val('');
-    $('#combine-filename').val('').prop('disabled', true);
-    $('#combine-output-folder').val(defaultOutputFolder);
-    $('#combine-optimize').prop('checked', false);
-  } else if (id === 'flatten-modal') {
-    // Clear inputs for flatten modal
-    $('#flatten-input').val('');
-    $('#flatten-filename').val('').prop('disabled', true);
-    $('#flatten-output-folder').val(defaultOutputFolder);
-  } else if (id === 'optimize-modal') {
-    // Clear inputs for optimize modal
-    $('#optimize-input').val('');
-    $('#optimize-filename').val('').prop('disabled', true);
-    $('#optimize-output-folder').val(defaultOutputFolder);
-    $('#optimize-aggressive').prop('checked', false);
-  } else if (id === 'extract-modal') {
-    // Clear inputs for extract modal
-    $('#extract-input').val('');
-    $('#extract-filename').val('').prop('disabled', true);
-    $('#extract-output-folder').val(defaultOutputFolder);
-    $('#extract-pages').val('');
-  } else {
-    // For other modals, clear all inputs as before
-    $('#' + id + ' input').val('');
-  }
-  $('#' + id + ' .tool-modal-run').prop('disabled', true);
-}
+import { initializeSplit } from './pdfSplit.js';import { initializeSplit } from './pdfSplit.js';
 
-// Show spinner overlay
-function showToolSpinner() {
-  if ($('#tool-spinner-overlay').length) return;
-  $('body').append('<div id="tool-spinner-overlay"><div class="tool-spinner"></div></div>');
-}
+import { initializeCombine } from './pdfCombine.js';import { initializeCombine } from './pdfCombine.js';
 
-// Hide spinner overlay
-function hideToolSpinner() {
-  $('#tool-spinner-overlay').remove();
-}
+import { initializeFlatten } from './pdfFlatten.js';import { initializeFlatten } from './pdfFlatten.js';
 
-// Show split progress modal
-function showSplitProgress() {
-  $('#split-progress-modal').fadeIn(200);
-  $('#split-cancel-btn').prop('disabled', false).text('Cancel');
-  updateSplitProgress(0, 0, 0, 0, 0, 'Initializing...');
-}
+import { initializeOptimize } from './pdfOptimize.js';import { initializeOptimize } from './pdfOptimize.js';
 
-// Hide split progress modal
-function hideSplitProgress() {
-  $('#split-progress-modal').fadeOut(200);
-  currentSplitJobId = null;
-}
+import { initializeExtract } from './pdfExtract.js';import { initializeExtract } from './pdfExtract.js';
 
-// Update split progress
-function updateSplitProgress(currentPage, totalPages, currentChunk, totalChunks, percentage, message) {
-  console.log('Updating progress:', {currentPage, totalPages, currentChunk, totalChunks, percentage, message}); // Debug logging
-  
-  // Better page display
-  if (totalPages > 0) {
-    $('#progress-pages').text(`Page ${currentPage} of ${totalPages} processed`);
-  } else {
-    $('#progress-pages').text('Initializing...');
-  }
-  
-  // Better chunk display - show current completion status with context
-  if (totalChunks > 0) {
-    if (message && message.includes('Starting chunk')) {
-      $('#progress-chunks').text(`${currentChunk} of ${totalChunks} chunks complete (starting chunk ${currentChunk + 1})`);
-    } else if (message && message.includes('Saving chunk')) {
-      $('#progress-chunks').text(`${currentChunk} of ${totalChunks} chunks complete (saving chunk ${currentChunk + 1})`);
-    } else {
-      $('#progress-chunks').text(`${currentChunk} of ${totalChunks} chunks complete`);
-    }
-  } else {
-    $('#progress-chunks').text('Calculating chunks...');
-  }
-  
-  $('#progress-fill').css('width', percentage + '%');
-  $('#progress-percentage').text(percentage + '%');
-  $('#progress-status').text(message);
-}
 
-// Poll for split progress with adaptive polling for important state changes
-function pollSplitProgress(jobId) {
-  currentSplitJobId = jobId; // Store job ID for cancellation
-  
-  let lastState = {
-    currentPage: 0,
-    currentChunk: 0,
-    message: '',
-    percentage: 0
-  };
-  
-  const poll = () => {
-    $.ajax({
-      url: `/api/split_progress/${jobId}`,
-      type: 'GET',
-      success: function(data) {
-        console.log('Progress data received:', data); // Debug logging
-        
-        if (data.error) {
-          hideSplitProgress();
-          $('#split-message').text('Error: ' + data.error);
-          return;
-        }
-        
-        // Always update the UI with latest data
-        updateSplitProgress(
-          data.current_page || 0,
-          data.total_pages || 0,
-          data.current_chunk || 0,
-          data.total_chunks || 0,
-          data.percentage || 0,
-          data.message || 'Processing...'
-        );
-        
-        // Detect important state changes (non-page updates)
-        const currentMessage = data.message || 'Processing...';
-        const isImportantStateChange = (
-          // New chunk operations (starting or saving)
-          (currentMessage.includes('Starting chunk') && !lastState.message.includes('Starting chunk')) ||
-          (currentMessage.includes('Saving chunk') && !lastState.message.includes('Saving chunk')) ||
-          // Zip creation or completion phases
-          (currentMessage.includes('Creating zip') && !lastState.message.includes('Creating zip')) ||
-          (currentMessage.includes('Complete') && !lastState.message.includes('Complete')) ||
-          // Chunk progress changes (not just page changes)
-          (data.current_chunk !== lastState.currentChunk) ||
-          // Significant percentage jumps (like going to zip creation phase)
-          (Math.abs((data.percentage || 0) - lastState.percentage) > 10)
-        );
-        
-        // Update our state tracking
-        lastState = {
-          currentPage: data.current_page || 0,
-          currentChunk: data.current_chunk || 0,
-          message: currentMessage,
-          percentage: data.percentage || 0
-        };
-        
-        if (data.status === 'complete') {
-          setTimeout(() => {
-            hideSplitProgress();
-            closeModal('split-modal');
-            if (data.zipfile) {
-              alert('PDF split successfully!\nSaved to: ' + data.zipfile);
-            }
-          }, 1000); // Show 100% for a moment before closing
-        } else if (data.status === 'cancelled') {
-          hideSplitProgress();
-          closeModal('split-modal');
-          alert('PDF split was cancelled.');
-        } else if (data.status === 'error') {
-          hideSplitProgress();
-          $('#split-message').text('Error: ' + (data.message || 'Split failed'));
-        } else {
-          // Adaptive polling: faster for important state changes, regular for page updates
-          let pollInterval;
-          if (currentMessage.includes('Cancelling') || currentMessage.includes('Cancellation')) {
-            // Very fast polling when cancellation is in progress
-            pollInterval = 25; // 25ms for cancellation feedback
-            console.log('Cancellation detected, using very fast polling (25ms):', currentMessage);
-          } else if (isImportantStateChange) {
-            // More frequent polling when important operations are happening
-            pollInterval = 50; // 50ms for critical state changes
-            console.log('Important state change detected, using fast polling (50ms):', currentMessage);
-          } else if (currentMessage.includes('Saving') || currentMessage.includes('Creating')) {
-            // Medium polling during save/create operations
-            pollInterval = 75; // 75ms during save operations
-          } else {
-            // Regular polling for page processing
-            pollInterval = 100; // 100ms for regular page updates
-          }
-          
-          setTimeout(poll, pollInterval);
-        }
-      },
-      error: function(xhr, status, error) {
-        console.log('Progress polling error:', xhr.responseText, status, error); // Debug logging
-        hideSplitProgress();
-        $('#split-message').text('Error: Lost connection to server');
-      }
-    });
-  };
-  
-  poll();
-}
 
-// Track total pages for split validation
-let splitTotalPages = 0;
+// Load default output folder on page load// Load default output folder on page load
 
-// Track current split job ID for cancellation
-let currentSplitJobId = null;
+$(document).ready(function() {$(document).ready(function() {
 
-// Track current flatten job ID for cancellation
-let currentFlattenJobId = null;
+  initializeDefaultFolder();  initializeDefaultFolder();
 
-// Track flatten progress
-function trackFlattenProgress(jobId) {
-  currentFlattenJobId = jobId; // Store job ID for cancellation
-  
-  let lastState = {
-    currentPage: 0,
-    message: '',
-    percentage: 0
-  };
-  
-  const poll = () => {
-    $.ajax({
-      url: `/api/flatten_progress/${jobId}`,
-      type: 'GET',
-      success: function(data) {
-        console.log('Flatten progress data received:', data); // Debug logging
-        
-        if (data.error) {
-          closeModal('flatten-progress-modal');
-          alert('Error: ' + data.error);
-          return;
-        }
-        
-        // Update the UI with latest data
-        updateFlattenProgress(
-          data.current_page || 0,
-          data.total_pages || 0,
-          data.percentage || 0,
-          data.message || 'Processing...'
-        );
-        
-        // Detect important state changes
-        const currentMessage = data.message || 'Processing...';
-        const isImportantStateChange = (
-          (currentMessage.includes('Saving') && !lastState.message.includes('Saving')) ||
-          (currentMessage.includes('Complete') && !lastState.message.includes('Complete')) ||
-          (Math.abs((data.percentage || 0) - lastState.percentage) > 5)
-        );
-        
-        // Update our state tracking
-        lastState = {
-          currentPage: data.current_page || 0,
-          message: currentMessage,
-          percentage: data.percentage || 0
-        };
-        
-        if (data.status === 'complete') {
-          setTimeout(() => {
-            closeModal('flatten-progress-modal');
-            if (data.filename) {
-              alert('PDF flattened successfully!\nSaved to: ' + data.filename);
-            }
-          }, 1000); // Show 100% for a moment before closing
-        } else if (data.status === 'cancelled') {
-          closeModal('flatten-progress-modal');
-          alert('PDF flatten was cancelled.');
-        } else if (data.status === 'error') {
-          closeModal('flatten-progress-modal');
-          alert('Error: ' + (data.message || 'Flatten failed'));
-        } else {
-          // Adaptive polling
-          let pollInterval;
-          if (currentMessage.includes('Cancelling') || currentMessage.includes('Cancellation')) {
-            pollInterval = 25; // 25ms for cancellation feedback
-          } else if (isImportantStateChange) {
-            pollInterval = 50; // 50ms for important state changes
-          } else if (currentMessage.includes('Saving')) {
-            pollInterval = 75; // 75ms during save operations
-          } else {
-            pollInterval = 100; // 100ms for regular updates
-          }
-          
-          setTimeout(poll, pollInterval);
-        }
-      },
-      error: function(xhr, status, error) {
-        console.log('Flatten progress polling error:', xhr.responseText, status, error);
-        closeModal('flatten-progress-modal');
-        alert('Error: Lost connection to server');
-      }
-    });
-  };
-  
-  poll();
-}
+});});
 
-// Update flatten progress display
-function updateFlattenProgress(currentPage, totalPages, percentage, message) {
-  console.log('Updating flatten progress:', {currentPage, totalPages, percentage, message});
-  
-  // Update progress bar
-  $('#flatten-progress-fill').css('width', percentage + '%');
-  $('#flatten-progress-percentage').text(percentage + '%');
-  $('#flatten-progress-status').text(message || 'Processing...');
-}
 
-// Validate inputs for compress PDF tool
-function validateCompressInputs() {
-  let file = $('#compress-input')[0].files[0];
-  let fname = $('#compress-filename').val();
-  let outputFolder = $('#compress-output-folder').val();
-  
-  // More permissive filename validation - allow most common filename characters
-  let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-  let isValidFolder = outputFolder && outputFolder.trim().length > 0;
-  let canRun = file && isValidFilename && isValidFolder;
-  
-  $('#compress-run').prop('disabled', !canRun);
-}
 
-// Validate inputs for split PDF tool
-function validateSplitInputs() {
-  let file = $('#split-input')[0].files[0];
-  let fname = $('#split-filename').val();
-  let outputFolder = $('#split-output-folder').val();
-  let method = $('input[name="split-method"]:checked').val();
-  
-  let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-  let isValidFolder = outputFolder && outputFolder.trim().length > 0;
-  let canRun = file && isValidFilename && isValidFolder && splitTotalPages > 1;
-  
-  if (method === 'pages') {
-    let maxPages = parseInt($('#split-max-pages').val());
-    canRun = canRun && maxPages > 0;
-  } else if (method === 'size') {
-    let maxSize = parseFloat($('#split-max-size').val());
-    canRun = canRun && maxSize > 0;
-  }
-  
-  console.log('Validation:', {file: !!file, fname, method, isValidFilename, isValidFolder, splitTotalPages, canRun});
-  
-  $('#split-run').prop('disabled', !canRun);
-}
+// Initialize all PDF tools// Initialize all PDF tools
 
-// Validate inputs for combine PDFs tool
-function validateCombineInputs() {
-    let files = $('#combine-input')[0].files;
-    let fname = $('#combine-filename').val();
-    let outputFolder = $('#combine-output-folder').val();
-    
-    let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-    let isValidFolder = outputFolder && outputFolder.trim().length > 0;
-    let canRun = files.length > 0 && isValidFilename && isValidFolder;
-    
-    $('#combine-run').prop('disabled', !canRun);
-}
+export function compressSplitCombinePDFs(window, document) {export function compressSplitCombinePDFs(window, document) {
 
-// Validate inputs for flatten PDF tool
-function validateFlattenInputs() {
-    let file = $('#flatten-input')[0].files[0];
-    let fname = $('#flatten-filename').val();
-    let outputFolder = $('#flatten-output-folder').val();
-    
-    let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-    let isValidFolder = outputFolder && outputFolder.trim().length > 0;
-    let canRun = file && isValidFilename && isValidFolder;
-    
-    $('#flatten-run').prop('disabled', !canRun);
-}
+  // --- Modal open/close logic ---  // --- Modal open/close logic ---
 
-// Validate inputs for optimize PDF tool
-function validateOptimizeInputs() {
-    let file = $('#optimize-input')[0].files[0];
-    let fname = $('#optimize-filename').val();
-    let outputFolder = $('#optimize-output-folder').val();
-    
-    let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-    let isValidFolder = outputFolder && outputFolder.trim().length > 0;
-    let canRun = file && isValidFilename && isValidFolder;
-    
-    $('#optimize-run').prop('disabled', !canRun);
-}
+  $('.tool-modal-cancel').on('click', function() {  $('.tool-modal-cancel').on('click', function() {
 
-// Validate inputs for extract pages tool
-function validateExtractInputs() {
-    let file = $('#extract-input')[0].files[0];
-    let fname = $('#extract-filename').val();
-    let outputFolder = $('#extract-output-folder').val();
-    let pages = $('#extract-pages').val();
-    
-    let isValidFilename = fname && fname.trim().length > 0 && !/[<>:"/\\|?*]/.test(fname);
-    let isValidFolder = outputFolder && outputFolder.trim().length > 0;
-    let isValidPages = pages && pages.trim().length > 0;
-    let canRun = file && isValidFilename && isValidFolder && isValidPages;
-    
-    $('#extract-run').prop('disabled', !canRun);
-}
+    closeModal($(this).data('modal'));    closeModal($(this).data('modal'));
 
-// Compress, split, and combine PDF functions
-export function compressSplitCombinePDFs(window, document) {
-  // --- Modal open/close logic ---
-  $('.tool-modal-cancel').on('click', function() {
-    closeModal($(this).data('modal'));
-  });
+  });  });
 
-  // --- Split cancel button handler ---
-  $('#split-cancel-btn').on('click', function() {
-    if (currentSplitJobId) {
-      // Disable button immediately to prevent multiple clicks
-      $(this).prop('disabled', true).text('Cancelling...');
-      
-      // Show immediate feedback to user
-      $('#progress-status').text('Cancellation requested...');
-      
-      $.ajax({
-        url: `/api/cancel_split/${currentSplitJobId}`,
-        type: 'POST',
-        success: function(data) {
-          console.log('Cancel request sent:', data);
-          // Show faster feedback
-          $('#progress-status').text('Cancelling operation, please wait...');
-          // Progress polling will handle the actual cleanup and modal closing
-        },
-        error: function(xhr, status, error) {
-          console.log('Cancel request error:', error);
-          // Re-enable button if cancel request failed
-          $('#split-cancel-btn').prop('disabled', false).text('Cancel');
-          $('#progress-status').text('Cancel request failed');
-        }
-      });
-    }
-  });
 
-  // --- Flatten cancel button handler ---
-  $('#flatten-cancel-btn').on('click', function() {
-    if (currentFlattenJobId) {
-      // Disable button immediately to prevent multiple clicks
-      $(this).prop('disabled', true).text('Cancelling...');
-      
-      // Show immediate feedback to user
-      $('#flatten-progress-status').text('Cancellation requested...');
-      
-      $.ajax({
+
+  // Initialize all PDF tools  // Initialize all PDF tools
+
+  initializeCompress();  initializeCompress();
+
+  initializeSplit();  initializeSplit();
+
+  initializeCombine();  initializeCombine();
+
+  initializeFlatten();  initializeFlatten();
+
+  initializeOptimize();  initializeOptimize();
+
+  initializeExtract();  initializeExtract();
+
+
+
+  // Set up folder browsing functionality for all tools  // Set up folder browsing functionality for all tools
+
+  $('#compress-browse-folder, #split-browse-folder, #combine-browse-folder, #flatten-browse-folder, #optimize-browse-folder, #extract-browse-folder').on('click', function() {  $('#compress-browse-folder, #split-browse-folder, #combine-browse-folder, #flatten-browse-folder, #optimize-browse-folder, #extract-browse-folder').on('click', function() {
+
+    const toolType = $(this).attr('id').split('-')[0]; // extract tool type from button id    const toolType = $(this).attr('id').split('-')[0]; // extract tool type from button id
+
+    selectFolder(`#${toolType}-output-folder`);    selectFolder(`#${toolType}-output-folder`);
+
+  });  });
+
+
+
+  // Expose openModal globally for navbar links  // Expose openModal globally for navbar links
+
+  window.openModal = openModal;  window.openModal = openModal;
+
+}}
+
+
+
+// Export the main initialization function that includes all PDF tools// Export the main initialization function that includes all PDF tools
+
+export function initializePDFTools(window, document) {export function initializePDFTools(window, document) {
+
+  compressSplitCombinePDFs(window, document);  compressSplitCombinePDFs(window, document);
+
+}}
         url: `/api/cancel_flatten/${currentFlattenJobId}`,
         type: 'POST',
         success: function(data) {
