@@ -4,7 +4,6 @@
     - Combine
     - √ Flatten
     - Extract pages
-- Extract pages - handle cases with unavailable page numbers
 - Help page
 - Test "Optimize PDF" more to ensure it is actually optimizing (current approach is very conservative)
 - Detailed comments & documentation
