@@ -340,7 +340,7 @@ def api_optimize_pdf():
         input_pdf = request.files.get('input_pdf')
         output_filename = request.form.get('output_filename')
         output_folder = request.form.get('output_folder', app.config['OUTPUT_FOLDER'])
-        aggressive = request.form.get('aggressive') == 'true'
+        aggressive = True # request.form.get('aggressive') == 'true'
         
         if not input_pdf or not output_filename:
             return jsonify({'success': False, 'error': 'Missing required fields.'}), 400

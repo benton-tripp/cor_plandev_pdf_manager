@@ -2,6 +2,10 @@ env/
 manage_pdfs/__pycache__/
 dist/
 build/
+tests/test_pdfs/
+!tests/test_files/.gitkeep
+tests/logs/
+tests/outputs/
 
 
 # Byte-compiled / optimized / DLL files

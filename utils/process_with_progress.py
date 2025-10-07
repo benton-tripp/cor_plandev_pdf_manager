@@ -314,7 +314,7 @@ def extract_pages_with_progress(job_id, input_path, output_path, page_numbers, e
         }
 
 
-def optimize_pdf_with_progress(job_id, input_path, output_path, aggressive, optimize_progress):
+def optimize_pdf_with_progress(job_id, input_path, output_path, optimize_progress, aggressive=True):
     """Run PDF optimization with progress tracking"""
     try:
         # Check if job was already cancelled before we even started
@@ -444,7 +444,7 @@ def compress_pdf_with_progress(job_id, input_path, output_path, should_optimize,
             
             # Create temporary optimized file
             temp_optimized_path = input_path.replace('.pdf', '_temp_optimized.pdf')
-            optimize_result = optimize_pdf(input_path, temp_optimized_path, aggressive=False)
+            optimize_result = optimize_pdf(input_path, temp_optimized_path, aggressive=True)
             
             logging.info(f"Optimization completed for job {job_id}, result: {optimize_result}")
             
