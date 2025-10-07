@@ -1,8 +1,6 @@
-- Test "Optimize PDF" more to ensure it is actually optimizing (current approach is very conservative)
 - Detailed comments & documentation
     - README
     - Inline comments & page/module descriptions
         - JS
         - Python Modules
         - app.py
-- When the browse output directory opens, open it on the current screen if there are multiple displays (same as browser window).

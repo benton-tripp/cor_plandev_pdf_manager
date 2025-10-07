@@ -38,28 +38,28 @@ $(document).ready(function () {
     initializeExtract();
     
     // Set up folder browsing functionality for all tools
-    $('#compress-browse-folder').on('click', function() {
-        selectFolder('#compress-output-folder', window.validateCompressInputs, 'compress');
+    $('#compress-browse-folder').on('click', function(event) {
+        selectFolder('#compress-output-folder', window.validateCompressInputs, 'compress', event);
     });
     
-    $('#split-browse-folder').on('click', function() {
-        selectFolder('#split-output-folder', window.validateSplitInputs, 'split');
+    $('#split-browse-folder').on('click', function(event) {
+        selectFolder('#split-output-folder', window.validateSplitInputs, 'split', event);
     });
     
-    $('#combine-browse-folder').on('click', function() {
-        selectFolder('#combine-output-folder', window.validateCombineInputs, 'combine');
+    $('#combine-browse-folder').on('click', function(event) {
+        selectFolder('#combine-output-folder', window.validateCombineInputs, 'combine', event);
     });
     
-    $('#flatten-browse-folder').on('click', function() {
-        selectFolder('#flatten-output-folder', window.validateFlattenInputs, 'flatten');
+    $('#flatten-browse-folder').on('click', function(event) {
+        selectFolder('#flatten-output-folder', window.validateFlattenInputs, 'flatten', event);
     });
     
-    $('#optimize-browse-folder').on('click', function() {
-        selectFolder('#optimize-output-folder', window.validateOptimizeInputs, 'optimize');
+    $('#optimize-browse-folder').on('click', function(event) {
+        selectFolder('#optimize-output-folder', window.validateOptimizeInputs, 'optimize', event);
     });
     
-    $('#extract-browse-folder').on('click', function() {
-        selectFolder('#extract-output-folder', window.validateExtractInputs, 'extract');
+    $('#extract-browse-folder').on('click', function(event) {
+        selectFolder('#extract-output-folder', window.validateExtractInputs, 'extract', event);
     });
     
     // Set up file input browser tracking for all tools

@@ -59,7 +59,7 @@ function setBrowserInactive(modalPrefix, validationFunction) {
 }
 
 // Folder browsing functionality for desktop app
-export function selectFolder(inputId, validationFunction, modalPrefix) {
+export function selectFolder(inputId, validationFunction, modalPrefix, event) {
   // Determine modal prefix from inputId if not provided
   if (!modalPrefix) {
     modalPrefix = inputId.replace('#', '').replace('-output-folder', '');
@@ -68,10 +68,30 @@ export function selectFolder(inputId, validationFunction, modalPrefix) {
   // Mark browser as active and disable buttons
   setBrowserActive(modalPrefix);
   
+  // Get cursor position from the event if available
+  let cursorX = null;
+  let cursorY = null;
+  
+  if (event) {
+    // Use screenX/screenY for absolute screen coordinates (better for multi-monitor)
+    if (event.screenX !== undefined && event.screenY !== undefined) {
+      cursorX = event.screenX;
+      cursorY = event.screenY;
+      console.log(`Captured screen position from event: (${cursorX}, ${cursorY})`);
+    } else if (event.clientX !== undefined && event.clientY !== undefined) {
+      // Fallback to client coordinates if screen coordinates unavailable
+      cursorX = event.clientX;
+      cursorY = event.clientY;
+      console.log(`Captured client position from event: (${cursorX}, ${cursorY})`);
+    }
+  } else {
+    console.log('No event provided, dialog will use fallback positioning');
+  }
+  
   // Check if we're running in a webview (desktop app)
   if (window.pywebview && window.pywebview.api) {
     // Use webview folder selection (desktop app)
-    window.pywebview.api.select_folder().then(function(folderPath) {
+    window.pywebview.api.select_folder(cursorX, cursorY).then(function(folderPath) {
       if (folderPath) {
         $(inputId).val(folderPath);
         if (validationFunction) {
@@ -90,6 +110,11 @@ export function selectFolder(inputId, validationFunction, modalPrefix) {
     $.ajax({
       url: '/api/select_folder',
       type: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({
+        cursor_x: cursorX,
+        cursor_y: cursorY
+      }),
       success: function(data) {
         if (data.success && data.folder) {
           $(inputId).val(data.folder);

@@ -31,9 +31,9 @@ class Api:
     def __init__(self):
         self.folder_selector = FolderSelector()
     
-    def select_folder(self):
+    def select_folder(self, cursor_x=None, cursor_y=None):
         """Open folder selection dialog using shared module"""
-        return self.folder_selector.select_folder()
+        return self.folder_selector.select_folder(cursor_x=cursor_x, cursor_y=cursor_y)
 
 def start_flask(port):
     """Start Flask in a separate thread"""

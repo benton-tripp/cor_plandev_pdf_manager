@@ -87,9 +87,14 @@ def get_default_output_folder_api():
 def api_select_folder():
     """Open native folder selection dialog"""
     try:
+        # Get cursor position from request data if available
+        data = request.get_json() or {}
+        cursor_x = data.get('cursor_x')
+        cursor_y = data.get('cursor_y')
+        
         # Use the FolderSelector from utils
         folder_selector = FolderSelector()
-        selected_folder = folder_selector.select_folder()
+        selected_folder = folder_selector.select_folder(cursor_x=cursor_x, cursor_y=cursor_y)
         
         if selected_folder:
             return jsonify({'success': True, 'folder': selected_folder})
