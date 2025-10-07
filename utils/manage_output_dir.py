@@ -7,8 +7,17 @@ import tempfile
 import os
 from tkinter import filedialog
 import tkinter as tk
-import ctypes
-from ctypes import wintypes
+
+# Conditionally import Windows-specific modules
+try:
+    if os.name == 'nt':  # Only import on Windows
+        import ctypes
+        from ctypes import wintypes
+        CTYPES_AVAILABLE = True
+    else:
+        CTYPES_AVAILABLE = False
+except ImportError:
+    CTYPES_AVAILABLE = False
 
 
 # Create default output folder in user's Documents
@@ -34,9 +43,8 @@ def get_monitor_info():
     monitors = []
     
     # Try Windows API with ctypes for accurate monitor information
-    if os.name == 'nt':
+    if os.name == 'nt' and CTYPES_AVAILABLE:
         try:
-            
             # Use ctypes to call EnumDisplayMonitors properly
             user32 = ctypes.windll.user32
             
